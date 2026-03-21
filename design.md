@@ -1,4 +1,4 @@
-# shuqun
+# Data Coffee
 
 MCP server for 荷兰数据群 — 一个 700 人华人数据/AI 社区的自组织撮合协议。
 
@@ -15,7 +15,7 @@ MCP server for 荷兰数据群 — 一个 700 人华人数据/AI 社区的自组
 一个开源的 MCP server，社区成员用自己的 Agent（Claude Code / Cursor / 自建）连入。
 
 ```
-成员的 Agent ──MCP──→ shuqun server ──→ SQLite/Turso
+成员的 Agent ──MCP──→ data-coffee server ──→ SQLite/Turso
                                     ──→ 微信机器人（周报）
 ```
 
@@ -90,11 +90,11 @@ MCP server for 荷兰数据群 — 一个 700 人华人数据/AI 社区的自组
 
 | URI | 说明 |
 |-----|------|
-| `shuqun://directory` | 成员目录（公开 profile 摘要） |
-| `shuqun://needs/active` | 当前活跃需求 |
-| `shuqun://offers/active` | 当前可用资源 |
-| `shuqun://projects/open` | 招募中的项目 |
-| `shuqun://report/latest` | 最新周报 |
+| `data-coffee://directory` | 成员目录（公开 profile 摘要） |
+| `data-coffee://needs/active` | 当前活跃需求 |
+| `data-coffee://offers/active` | 当前可用资源 |
+| `data-coffee://projects/open` | 招募中的项目 |
+| `data-coffee://report/latest` | 最新周报 |
 
 ## 数据模型
 
@@ -234,11 +234,11 @@ GitHub Actions 每周日运行：
 ```json
 {
   "mcpServers": {
-    "shuqun": {
+    "data-coffee": {
       "command": "npx",
-      "args": ["shuqun"],
+      "args": ["data-coffee"],
       "env": {
-        "SHUQUN_TOKEN": "your-token-here"
+        "DATA_COFFEE_TOKEN": "your-token-here"
       }
     }
   }
@@ -260,7 +260,7 @@ GitHub Actions 每周日运行：
 ## 项目结构
 
 ```
-shuqun/
+data_coffee_terminal/
 ├── src/
 │   ├── index.ts              # MCP server 入口
 │   ├── tools/
@@ -300,7 +300,7 @@ shuqun/
 | MCP SDK | `@modelcontextprotocol/sdk` | 官方实现 |
 | 数据库 | SQLite (dev) / Turso (prod) | 零运维，单文件起步，Turso 做云端共享 |
 | 微信机器人 | WeChatFerry / 企微 webhook | 周报推送 |
-| 包发布 | npm (`shuqun`) | `npx shuqun` 一行启动 |
+| 包发布 | npm (`data-coffee`) | `npx data-coffee` 一行启动 |
 | CI/CD | GitHub Actions | 周报 cron + 发布自动化 |
 
 ## MVP 路线
