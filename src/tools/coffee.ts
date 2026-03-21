@@ -297,6 +297,61 @@ export function registerCoffeeTools(server: McpServer) {
   );
 
   server.tool(
+    "coffee_update",
+    "Update a coffee session you created. Only the creator can update.",
+    {
+      coffee_id: z.string().describe("ID of the coffee to update"),
+      topic: z.string().optional().describe("New topic"),
+      description: z.string().optional().describe("New description"),
+      city: z.string().optional().describe("New city"),
+      location: z.string().optional().describe("New location"),
+      scheduled_at: z.string().optional().describe("New date/time (ISO 8601)"),
+      max_size: z.number().min(0).optional().describe("New max participants (0 = unlimited)"),
+      tags: z.array(z.string()).optional().describe("New tags"),
+    },
+    async ({ coffee_id, ...updates }, { authInfo }) => {
+      const userId = (authInfo?.extra as { userId?: string })?.userId;
+      if (!userId) {
+        return { content: [{ type: "text", text: JSON.stringify({ error: "Authentication required" }) }] };
+      }
+
+      const db = getDb();
+
+      // Verify ownership
+      const coffee = await db.execute({
+        sql: "SELECT * FROM coffees WHERE id = ? AND creator_id = ?",
+        args: [coffee_id, userId],
+      });
+      if (coffee.rows.length === 0) {
+        return { content: [{ type: "text", text: JSON.stringify({ error: "Coffee not found or you are not the creator" }) }] };
+      }
+
+      const fields: string[] = [];
+      const args: unknown[] = [];
+
+      if (updates.topic !== undefined) { fields.push("topic = ?"); args.push(updates.topic); }
+      if (updates.description !== undefined) { fields.push("description = ?"); args.push(updates.description); }
+      if (updates.city !== undefined) { fields.push("city = ?"); args.push(updates.city); }
+      if (updates.location !== undefined) { fields.push("location = ?"); args.push(updates.location); }
+      if (updates.scheduled_at !== undefined) { fields.push("scheduled_at = ?"); args.push(updates.scheduled_at); }
+      if (updates.max_size !== undefined) { fields.push("max_size = ?"); args.push(updates.max_size); }
+      if (updates.tags !== undefined) { fields.push("tags = ?"); args.push(JSON.stringify(updates.tags)); }
+
+      if (fields.length === 0) {
+        return { content: [{ type: "text", text: JSON.stringify({ error: "No fields to update" }) }] };
+      }
+
+      args.push(coffee_id);
+      await db.execute({
+        sql: `UPDATE coffees SET ${fields.join(", ")} WHERE id = ?`,
+        args: args as any[],
+      });
+
+      return { content: [{ type: "text", text: JSON.stringify({ success: true, message: "Coffee updated", updated_fields: fields.map(f => f.split(" =")[0]) }) }] };
+    }
+  );
+
+  server.tool(
     "coffee_complete",
     "Mark a coffee session as completed (creator only)",
     {
