@@ -10,6 +10,7 @@
     }
   },
   "rewrites": [
+    { "source": "/", "destination": "/api/index" },
     { "source": "/mcp", "destination": "/api/mcp" }
   ],
   "crons": [
