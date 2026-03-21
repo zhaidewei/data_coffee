@@ -1,7 +1,7 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
-import { createServer } from "../src/server.js";
-import { validateToken, extractBearerToken } from "../src/auth.js";
+import { createServer } from "../src/server";
+import { validateToken, extractBearerToken } from "../src/auth";
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   // CORS
@@ -45,10 +45,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     await transport.handleRequest(req, res, req.body);
   } catch (err) {
+    console.error("MCP handler error:", err);
     if (!res.headersSent) {
       res.status(500).json({
         jsonrpc: "2.0",
-        error: { code: -32603, message: "Internal server error" },
+        error: { code: -32603, message: String(err) },
         id: null,
       });
     }

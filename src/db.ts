@@ -4,7 +4,9 @@ let client: Client | null = null;
 
 export function getDb(): Client {
   if (!client) {
-    const url = process.env.TURSO_DATABASE_URL || "file:local.db";
+    const isVercel = !!process.env.VERCEL;
+    const url = process.env.TURSO_DATABASE_URL || (isVercel ? "" : "file:local.db");
+    if (!url) throw new Error("TURSO_DATABASE_URL is required in production");
     const authToken = process.env.TURSO_AUTH_TOKEN;
     client = createClient({ url, authToken });
   }
