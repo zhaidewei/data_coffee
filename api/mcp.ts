@@ -1,7 +1,7 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
-import { createServer } from "../src/server";
-import { validateToken, extractBearerToken } from "../src/auth";
+import { createServer } from "../src/server.js";
+import { validateToken, extractBearerToken } from "../src/auth.js";
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   // CORS
