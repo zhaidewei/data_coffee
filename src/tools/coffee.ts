@@ -76,6 +76,9 @@ export function registerCoffeeTools(server: McpServer) {
       const conditions = ["c.status IN ('open', 'full', 'confirmed')"];
       const args: unknown[] = [];
 
+      // Filter out past coffees (scheduled_at is in the past)
+      conditions.push("(c.scheduled_at IS NULL OR c.scheduled_at > datetime('now'))");
+
       if (params.city) {
         conditions.push("LOWER(c.city) = LOWER(?)");
         args.push(params.city);
@@ -93,7 +96,7 @@ export function registerCoffeeTools(server: McpServer) {
               FROM coffees c
               JOIN users u ON c.creator_id = u.id
               WHERE ${conditions.join(" AND ")}
-              ORDER BY c.created_at DESC
+              ORDER BY CASE WHEN c.scheduled_at IS NOT NULL THEN 0 ELSE 1 END, c.scheduled_at ASC, c.created_at DESC
               LIMIT ?`,
         args: args as any[],
       });

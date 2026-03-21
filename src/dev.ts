@@ -2,7 +2,8 @@ import { createServer as createHttpServer } from "http";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { createServer } from "./server.js";
 import { validateToken, extractBearerToken, createInviteCodes } from "./auth.js";
-import { migrate } from "./db.js";
+import { getDb, migrate } from "./db.js";
+import { renderLanding } from "./landing.js";
 
 const PORT = parseInt(process.env.PORT || "3000");
 
@@ -21,6 +22,22 @@ const httpServer = createHttpServer(async (req, res) => {
   if (req.method === "OPTIONS") {
     res.writeHead(204);
     res.end();
+    return;
+  }
+
+  // Landing page
+  const parsedUrl = new URL(req.url || "/", `http://localhost:${PORT}`);
+  if (parsedUrl.pathname === "/" || parsedUrl.pathname === "") {
+    try {
+      const lang = parsedUrl.searchParams.get("lang") === "en" ? "en" : "zh";
+      const html = await renderLanding(lang, `http://localhost:${PORT}/mcp`);
+      res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+      res.end(html);
+    } catch (err) {
+      console.error("Landing page error:", err);
+      res.writeHead(500);
+      res.end("Internal error");
+    }
     return;
   }
 
