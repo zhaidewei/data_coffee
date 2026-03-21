@@ -4,6 +4,9 @@
   "functions": {
     "api/mcp.ts": {
       "includeFiles": "src/**"
+    },
+    "api/index.ts": {
+      "includeFiles": "src/**"
     }
   },
   "rewrites": [
