@@ -4,41 +4,31 @@ import { getDb } from "../db.js";
 import {
   generateToken,
   generateId,
-  validateInviteCode,
-  markInviteCodeUsed,
   createInviteCodes,
 } from "../auth.js";
 
 export function registerProfileTools(server: McpServer) {
   server.tool(
     "profile_register",
-    "Register a new member with an invite code. Returns a token for future authentication.",
+    "Register a new member. Returns a token for future authentication.",
     {
-      invite_code: z.string().describe("Invite code received from the WeChat group"),
       nickname: z.string().describe("Your display name"),
       bio: z.string().describe("Self-introduction in natural language (skills, role, city, etc.)"),
     },
-    async ({ invite_code, nickname, bio }) => {
-      const valid = await validateInviteCode(invite_code);
-      if (!valid) {
-        return { content: [{ type: "text", text: JSON.stringify({ error: "Invalid or already used invite code" }) }] };
-      }
-
+    async ({ nickname, bio }) => {
       const db = getDb();
       const id = generateId("u");
       const token = generateToken();
 
       await db.execute({
         sql: "INSERT INTO users (id, nickname, token, invite_code, status) VALUES (?, ?, ?, ?, 'active')",
-        args: [id, nickname, token, invite_code],
+        args: [id, nickname, token, "open"],
       });
 
       await db.execute({
         sql: "INSERT INTO profiles (user_id, bio) VALUES (?, ?)",
         args: [id, bio],
       });
-
-      await markInviteCodeUsed(invite_code, id);
 
       return {
         content: [
