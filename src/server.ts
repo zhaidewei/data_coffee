@@ -1,6 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { registerProfileTools } from "./tools/profile.js";
 import { registerCoffeeTools } from "./tools/coffee.js";
+import { registerMessageTools } from "./tools/message.js";
 import { migrate } from "./db.js";
 
 let migrated = false;
@@ -18,6 +19,7 @@ export async function createServer(): Promise<McpServer> {
 
   registerProfileTools(server);
   registerCoffeeTools(server);
+  registerMessageTools(server);
 
   return server;
 }

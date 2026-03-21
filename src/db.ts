@@ -131,6 +131,30 @@ CREATE TABLE IF NOT EXISTS invite_codes (
   used_at     DATETIME,
   created_at  DATETIME DEFAULT CURRENT_TIMESTAMP
 );
+
+CREATE TABLE IF NOT EXISTS messages (
+  id          TEXT PRIMARY KEY,
+  type        TEXT NOT NULL DEFAULT 'direct',
+  from_user   TEXT,
+  to_user     TEXT,
+  coffee_id   TEXT,
+  content     TEXT NOT NULL,
+  reply_to    TEXT,
+  created_at  TEXT DEFAULT (datetime('now')),
+  FOREIGN KEY (from_user) REFERENCES users(id),
+  FOREIGN KEY (to_user) REFERENCES users(id),
+  FOREIGN KEY (coffee_id) REFERENCES coffees(id),
+  FOREIGN KEY (reply_to) REFERENCES messages(id)
+);
+
+CREATE TABLE IF NOT EXISTS message_reads (
+  message_id  TEXT NOT NULL,
+  user_id     TEXT NOT NULL,
+  read_at     TEXT DEFAULT (datetime('now')),
+  PRIMARY KEY (message_id, user_id),
+  FOREIGN KEY (message_id) REFERENCES messages(id),
+  FOREIGN KEY (user_id) REFERENCES users(id)
+);
 `;
 
 export async function migrate(): Promise<void> {

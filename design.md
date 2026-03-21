@@ -505,3 +505,178 @@ data_coffee_terminal/
 4. **Serverless 优先**：Vercel + Turso，零运维，按量付费
 5. **开源透明**：代码和数据模型全公开，社区可贡献可审计
 6. **Coffee 即社交**：多人 coffee 是核心活动单元，不限于 1:1
+
+---
+
+## 消息系统设计
+
+### 核心思路
+
+**异步邮箱模型**，不是即时通讯。发送者投递，接收者的 Agent 下次交互时拉取。没有 WebSocket，没有推送——符合 serverless + MCP 的架构约束。
+
+成员之间通过 **nickname 寻址**，不暴露 token 或内部 ID。
+
+### 消息类型
+
+| 类型 | 说明 | 场景 |
+|------|------|------|
+| `direct` | 一对一私信 | "帮我给 Dewei 发条消息" |
+| `coffee` | Coffee 群组消息 | "在这个 coffee 里说一下我会迟到 10 分钟" |
+| `system` | 系统通知（自动生成） | 有人加入你的 coffee、coffee 被标记完成 |
+
+### 数据库
+
+```sql
+CREATE TABLE IF NOT EXISTS messages (
+  id          TEXT PRIMARY KEY,
+  type        TEXT NOT NULL DEFAULT 'direct',  -- direct | coffee | system
+  from_user   TEXT,                             -- sender user_id, NULL for system
+  to_user     TEXT,                             -- recipient user_id (direct/system)
+  coffee_id   TEXT,                             -- target coffee (coffee type)
+  content     TEXT NOT NULL,
+  reply_to    TEXT,                             -- parent message id (threading)
+  created_at  TEXT DEFAULT (datetime('now')),
+  FOREIGN KEY (from_user) REFERENCES users(id),
+  FOREIGN KEY (to_user) REFERENCES users(id),
+  FOREIGN KEY (coffee_id) REFERENCES coffees(id),
+  FOREIGN KEY (reply_to) REFERENCES messages(id)
+);
+
+-- 已读状态独立表，支持 coffee 群消息的多人已读
+CREATE TABLE IF NOT EXISTS message_reads (
+  message_id  TEXT NOT NULL,
+  user_id     TEXT NOT NULL,
+  read_at     TEXT DEFAULT (datetime('now')),
+  PRIMARY KEY (message_id, user_id),
+  FOREIGN KEY (message_id) REFERENCES messages(id),
+  FOREIGN KEY (user_id) REFERENCES users(id)
+);
+```
+
+**寻址规则**：
+- `direct`：`to_user` 必填，`coffee_id` 为空
+- `coffee`：`coffee_id` 必填，`to_user` 为空，所有该 coffee 参与者可见
+- `system`：`from_user` 为空，`to_user` 必填
+
+### MCP Tools
+
+#### `message_send` — 发送消息
+
+```
+参数:
+  to:         string?   — 收件人 nickname（direct 必填）
+  coffee_id:  string?   — Coffee ID（填了 = 群组消息）
+  content:    string    — 消息内容
+  reply_to:   string?   — 回复某条消息的 ID
+
+逻辑:
+  1. 鉴权：必须登录
+  2. to 和 coffee_id 至少填一个
+  3. 如果 coffee_id → type = coffee，校验发送者是该 coffee 的参与者
+  4. 如果 to → type = direct，通过 nickname 查 to_user
+  5. 不能给自己发消息
+  6. 写入 messages 表
+  7. 如果是 direct，自动生成 system 通知给收件人
+  8. 返回 { message_id, type, to/coffee_id }
+
+错误:
+  - 未登录
+  - 收件人不存在
+  - 不是该 coffee 的参与者
+  - to 和 coffee_id 都为空
+```
+
+#### `message_inbox` — 查看收件箱
+
+```
+参数:
+  type:       string?   — 过滤: direct | coffee | system（默认全部）
+  unread:     boolean?  — 仅未读（默认 false）
+  coffee_id:  string?   — 查看某个 coffee 的群组消息
+  limit:      number?   — 返回条数（默认 20，最大 50）
+
+逻辑:
+  1. 鉴权
+  2. 查询条件组合：
+     - direct: to_user = 我
+     - coffee: 我参与的 coffee 的消息（自动聚合所有 coffee）
+     - system: to_user = 我 AND type = system
+     - 指定 coffee_id: 只看这个 coffee 的消息
+  3. LEFT JOIN message_reads 判断已读状态
+  4. 按 created_at DESC 排序
+  5. 返回消息列表 + 未读总数
+
+返回:
+  {
+    messages: [{ id, type, from_nickname, content, coffee_id, coffee_topic, reply_to, read, created_at }],
+    unread_count: number
+  }
+```
+
+#### `message_read` — 标记已读
+
+```
+参数:
+  message_id:  string?  — 标记单条已读
+  coffee_id:   string?  — 标记某 coffee 全部已读
+  all:         boolean? — 标记所有未读为已读
+
+逻辑:
+  1. 鉴权
+  2. INSERT OR IGNORE INTO message_reads (message_id, user_id)
+  3. 返回标记数量
+```
+
+### 系统通知自动触发
+
+在现有 tool 中插入 system 消息生成逻辑：
+
+| 触发事件 | 通知对象 | 消息模板 |
+|----------|----------|----------|
+| `coffee_join` | coffee 创建者 | "{nickname} 加入了你的 coffee「{topic}」" |
+| `coffee_leave` | coffee 创建者 | "{nickname} 退出了你的 coffee「{topic}」" |
+| `coffee_complete` | 所有参与者（除创建者） | "Coffee「{topic}」已完成，欢迎提交反馈" |
+| `message_send` (direct) | 收件人 | "{nickname} 给你发了一条私信" |
+
+### Agent 交互示例
+
+```
+用户: "帮我给 Alice 发个消息，说下周六的 coffee 我可能迟到"
+Agent: → message_send(to: "Alice", content: "下周六的 coffee 我可能迟到")
+Agent: ← 已发送给 Alice
+
+用户: "我有新消息吗？"
+Agent: → message_inbox(unread: true)
+Agent: ← 你有 3 条未读消息：
+         1. [私信] Alice: "收到，没关系！" — 5 分钟前
+         2. [系统] Bob 加入了你的 coffee「Vibe Coding」 — 1 小时前
+         3. [Vibe Coding] Bob: "大家好，期待周六见！" — 1 小时前
+
+用户: "在 vibe coding coffee 群里说一下今天改到线上"
+Agent: → message_send(coffee_id: "cof_xxx", content: "今天改到线上，链接稍后发")
+Agent: ← 已发送到 coffee 群组（3 位参与者可见）
+
+用户: "标记所有消息已读"
+Agent: → message_read(all: true)
+Agent: ← 已标记 3 条消息为已读
+```
+
+### 实现计划
+
+#### Phase 1 — 基础消息（MVP）
+- [ ] `messages` + `message_reads` 表（db.ts migrate）
+- [ ] `src/tools/message.ts` 注册到 server
+- [ ] `message_send` — 支持 direct + coffee
+- [ ] `message_inbox` — 收件箱，支持 type/unread/coffee_id 过滤
+- [ ] `message_read` — 标记已读
+
+#### Phase 2 — 系统通知
+- [ ] `coffee_join` → 通知创建者
+- [ ] `coffee_leave` → 通知创建者
+- [ ] `coffee_complete` → 通知所有参与者
+- [ ] `message_send` direct → 新消息通知
+
+#### Phase 3 — 增强
+- [ ] 消息回复 threading（reply_to 关联 + inbox 展示）
+- [ ] `message_delete` — 删除自己发的消息
+- [ ] landing page 显示社区消息活跃度统计

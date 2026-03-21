@@ -2,6 +2,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { getDb } from "../db.js";
 import { generateId } from "../auth.js";
+import { createSystemMessage } from "./message.js";
 
 export function registerCoffeeTools(server: McpServer) {
   server.tool(
@@ -182,6 +183,11 @@ export function registerCoffeeTools(server: McpServer) {
         args: [coffee_id, userId],
       });
 
+      // Notify creator
+      const joiner = await db.execute({ sql: "SELECT nickname FROM users WHERE id = ?", args: [userId] });
+      const joinerName = joiner.rows[0]?.nickname || "Someone";
+      await createSystemMessage(c.creator_id as string, `${joinerName} 加入了你的 coffee「${c.topic}」`);
+
       return {
         content: [
           {
@@ -292,6 +298,14 @@ export function registerCoffeeTools(server: McpServer) {
         args: [coffee_id],
       });
 
+      // Notify creator
+      const coffee = await db.execute({ sql: "SELECT creator_id, topic FROM coffees WHERE id = ?", args: [coffee_id] });
+      if (coffee.rows.length > 0) {
+        const leaver = await db.execute({ sql: "SELECT nickname FROM users WHERE id = ?", args: [userId] });
+        const leaverName = leaver.rows[0]?.nickname || "Someone";
+        await createSystemMessage(coffee.rows[0].creator_id as string, `${leaverName} 退出了你的 coffee「${coffee.rows[0].topic}」`);
+      }
+
       return { content: [{ type: "text", text: JSON.stringify({ success: true, message: "You left the coffee" }) }] };
     }
   );
@@ -364,13 +378,29 @@ export function registerCoffeeTools(server: McpServer) {
       }
 
       const db = getDb();
-      const result = await db.execute({
-        sql: "UPDATE coffees SET status = 'completed' WHERE id = ? AND creator_id = ?",
+
+      // Get coffee info before updating
+      const coffeeInfo = await db.execute({
+        sql: "SELECT topic FROM coffees WHERE id = ? AND creator_id = ?",
         args: [coffee_id, userId],
       });
-
-      if (result.rowsAffected === 0) {
+      if (coffeeInfo.rows.length === 0) {
         return { content: [{ type: "text", text: JSON.stringify({ error: "Coffee not found or you are not the creator" }) }] };
+      }
+
+      await db.execute({
+        sql: "UPDATE coffees SET status = 'completed' WHERE id = ?",
+        args: [coffee_id],
+      });
+
+      // Notify all participants except creator
+      const participants = await db.execute({
+        sql: "SELECT user_id FROM coffee_participants WHERE coffee_id = ? AND user_id != ?",
+        args: [coffee_id, userId],
+      });
+      const topic = coffeeInfo.rows[0].topic as string;
+      for (const p of participants.rows) {
+        await createSystemMessage(p.user_id as string, `Coffee「${topic}」已完成，欢迎提交反馈`);
       }
 
       return { content: [{ type: "text", text: JSON.stringify({ success: true, message: "Coffee marked as completed" }) }] };
