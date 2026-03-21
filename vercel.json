@@ -1,0 +1,11 @@
+{
+  "rewrites": [
+    { "source": "/mcp", "destination": "/api/mcp" }
+  ],
+  "crons": [
+    {
+      "path": "/api/cron/weekly-report",
+      "schedule": "0 10 * * 0"
+    }
+  ]
+}

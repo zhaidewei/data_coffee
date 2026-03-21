@@ -1,0 +1,23 @@
+{
+  "name": "data-coffee",
+  "version": "0.1.0",
+  "description": "MCP server for 荷兰数据群 community matching",
+  "type": "module",
+  "scripts": {
+    "dev": "tsc && node dist/src/dev.js",
+    "dev:vercel": "vercel dev",
+    "build": "tsc",
+    "lint": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.52.0",
+    "@libsql/client": "^0.14.0",
+    "@modelcontextprotocol/sdk": "^1.12.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.7.0",
+    "vercel": "^41.0.0"
+  },
+  "license": "MIT"
+}
