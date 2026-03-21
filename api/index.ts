@@ -132,33 +132,33 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     <div class="stats">
       <div class="stat">
         <div class="stat-number">${userCount}</div>
-        <div class="stat-label">members</div>
+        <div class="stat-label">成员</div>
       </div>
       <div class="stat">
         <div class="stat-number">${coffeeCount}</div>
-        <div class="stat-label">coffees</div>
+        <div class="stat-label">场 Coffee</div>
       </div>
       <div class="stat">
         <div class="stat-number">${openCoffeeCount}</div>
-        <div class="stat-label">open now</div>
+        <div class="stat-label">进行中</div>
       </div>
     </div>
 
     <div class="section">
-      <h2>MCP Endpoint</h2>
+      <h2>MCP 地址</h2>
       <div class="endpoint">https://data-coffee.vercel.app/api/mcp</div>
-      <p class="description">Connect your AI agent (Claude Code, Cursor, etc.) to join the community.</p>
+      <p class="description">用你的 AI Agent（Claude Code、Cursor 等）连接，加入社区。</p>
     </div>
 
     <div class="section">
-      <h2>Quick Start</h2>
+      <h2>快速开始</h2>
       <pre>{
   "mcpServers": {
     "data-coffee": {
       "type": "http",
       "url": "https://data-coffee.vercel.app/api/mcp",
       "headers": {
-        "Authorization": "Bearer YOUR_TOKEN"
+        "Authorization": "Bearer 你的TOKEN"
       }
     }
   }
@@ -166,19 +166,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     </div>
 
     <div class="section">
-      <h2>How to get a token</h2>
+      <h2>如何获取 Token</h2>
       <p class="description">
-        1. Add the MCP server config above (without token first)<br>
-        2. Ask your agent: "Register me on data-coffee, nickname: YourName"<br>
-        3. Save the returned token into your config<br>
-        4. Restart your agent
+        1. 先把上面的 MCP 配置加到你的 Agent（不需要填 token）<br>
+        2. 对 Agent 说："帮我注册 data-coffee，昵称：你的名字"<br>
+        3. 把返回的 token 填入配置<br>
+        4. 重启 Agent 即可
       </p>
     </div>
 
     <div class="footer">
       <a href="https://github.com/zhaidewei/data_coffee">GitHub</a>
       &nbsp;·&nbsp;
-      Open source &nbsp;·&nbsp; MCP-native &nbsp;·&nbsp; Agent is the only interface
+      开源 &nbsp;·&nbsp; MCP 原生 &nbsp;·&nbsp; Agent 是唯一入口
     </div>
   </div>
 </body>
