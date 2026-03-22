@@ -1,11 +1,15 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { getDb } from "../db.js";
 import {
-  generateToken,
-  generateId,
-  createInviteCodes,
-} from "../auth.js";
+  profileRegister,
+  profileGet,
+  profileUpdate,
+  adminCreateInviteCodes,
+} from "../services/profile.js";
+
+function jsonResult(data: unknown) {
+  return { content: [{ type: "text" as const, text: JSON.stringify(data) }] };
+}
 
 export function registerProfileTools(server: McpServer) {
   server.tool(
@@ -15,34 +19,7 @@ export function registerProfileTools(server: McpServer) {
       nickname: z.string().describe("Your display name"),
       bio: z.string().describe("Self-introduction in natural language (skills, role, city, etc.)"),
     },
-    async ({ nickname, bio }) => {
-      const db = getDb();
-      const id = generateId("u");
-      const token = generateToken();
-
-      await db.execute({
-        sql: "INSERT INTO users (id, nickname, token, invite_code, status) VALUES (?, ?, ?, ?, 'active')",
-        args: [id, nickname, token, "open"],
-      });
-
-      await db.execute({
-        sql: "INSERT INTO profiles (user_id, bio) VALUES (?, ?)",
-        args: [id, bio],
-      });
-
-      return {
-        content: [
-          {
-            type: "text",
-            text: JSON.stringify({
-              user_id: id,
-              token,
-              message: "Registration successful. Save your token for future connections.",
-            }),
-          },
-        ],
-      };
-    }
+    async ({ nickname, bio }) => jsonResult(await profileRegister({ nickname, bio }))
   );
 
   server.tool(
@@ -51,34 +28,7 @@ export function registerProfileTools(server: McpServer) {
     {
       query: z.string().describe("User ID or nickname to look up"),
     },
-    async ({ query }, { authInfo }) => {
-      const db = getDb();
-      const result = await db.execute({
-        sql: `SELECT u.id, u.nickname, u.status, p.city, p.company, p.role, p.skills, p.bio, p.available, p.languages, p.updated_at
-              FROM users u LEFT JOIN profiles p ON u.id = p.user_id
-              WHERE u.id = ? OR u.nickname LIKE ?`,
-        args: [query, `%${query}%`],
-      });
-
-      if (result.rows.length === 0) {
-        return { content: [{ type: "text", text: JSON.stringify({ error: "User not found" }) }] };
-      }
-
-      const profiles = result.rows.map((row) => ({
-        user_id: row.id,
-        nickname: row.nickname,
-        status: row.status,
-        city: row.city,
-        company: row.company,
-        role: row.role,
-        skills: JSON.parse((row.skills as string) || "[]"),
-        bio: row.bio,
-        available: JSON.parse((row.available as string) || "[]"),
-        languages: JSON.parse((row.languages as string) || "[]"),
-      }));
-
-      return { content: [{ type: "text", text: JSON.stringify(profiles.length === 1 ? profiles[0] : profiles) }] };
-    }
+    async ({ query }) => jsonResult(await profileGet({ query }))
   );
 
   server.tool(
@@ -95,35 +45,8 @@ export function registerProfileTools(server: McpServer) {
     },
     async (params, { authInfo }) => {
       const userId = (authInfo?.extra as { userId?: string })?.userId;
-      if (!userId) {
-        return { content: [{ type: "text", text: JSON.stringify({ error: "Authentication required" }) }] };
-      }
-
-      const db = getDb();
-      const fields: string[] = [];
-      const values: unknown[] = [];
-
-      if (params.city !== undefined) { fields.push("city = ?"); values.push(params.city); }
-      if (params.company !== undefined) { fields.push("company = ?"); values.push(params.company); }
-      if (params.role !== undefined) { fields.push("role = ?"); values.push(params.role); }
-      if (params.skills !== undefined) { fields.push("skills = ?"); values.push(JSON.stringify(params.skills)); }
-      if (params.bio !== undefined) { fields.push("bio = ?"); values.push(params.bio); }
-      if (params.available !== undefined) { fields.push("available = ?"); values.push(JSON.stringify(params.available)); }
-      if (params.languages !== undefined) { fields.push("languages = ?"); values.push(JSON.stringify(params.languages)); }
-
-      if (fields.length === 0) {
-        return { content: [{ type: "text", text: JSON.stringify({ error: "No fields to update" }) }] };
-      }
-
-      fields.push("updated_at = CURRENT_TIMESTAMP");
-      values.push(userId);
-
-      await db.execute({
-        sql: `UPDATE profiles SET ${fields.join(", ")} WHERE user_id = ?`,
-        args: values as any[],
-      });
-
-      return { content: [{ type: "text", text: JSON.stringify({ success: true, message: "Profile updated" }) }] };
+      if (!userId) return jsonResult({ error: "Authentication required" });
+      return jsonResult(await profileUpdate(params, userId));
     }
   );
 
@@ -135,10 +58,7 @@ export function registerProfileTools(server: McpServer) {
     },
     async ({ count }, { authInfo }) => {
       const userId = (authInfo?.extra as { userId?: string })?.userId;
-      const codes = await createInviteCodes(count, userId || null);
-      return {
-        content: [{ type: "text", text: JSON.stringify({ codes, message: `Generated ${count} invite codes` }) }],
-      };
+      return jsonResult(await adminCreateInviteCodes({ count }, userId || null));
     }
   );
 }
