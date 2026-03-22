@@ -84,8 +84,7 @@ export async function handleRestRequest(req: RestRequest): Promise<RestResponse>
   }
 
   if ((m = match("GET", "/profile"))) {
-    if (!query.query) return { status: 400, data: { error: "query parameter is required" } };
-    const data = await profileGet({ query: query.query });
+    const data = await profileGet({ query: query.query || "" });
     return { status: 200, data };
   }
 
