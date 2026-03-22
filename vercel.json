@@ -7,11 +7,15 @@
     },
     "api/index.ts": {
       "includeFiles": "src/**"
+    },
+    "api/rest.ts": {
+      "includeFiles": "src/**"
     }
   },
   "rewrites": [
     { "source": "/", "destination": "/api/index" },
-    { "source": "/mcp", "destination": "/api/mcp" }
+    { "source": "/mcp", "destination": "/api/mcp" },
+    { "source": "/api/rest/:path*", "destination": "/api/rest" }
   ],
   "crons": [
     {

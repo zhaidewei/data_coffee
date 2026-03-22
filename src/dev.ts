@@ -4,6 +4,7 @@ import { createServer } from "./server.js";
 import { validateToken, extractBearerToken, createInviteCodes } from "./auth.js";
 import { getDb, migrate } from "./db.js";
 import { renderLanding } from "./landing.js";
+import { handleRestRequest } from "./rest.js";
 
 const PORT = parseInt(process.env.PORT || "3000");
 
@@ -16,7 +17,7 @@ console.log("Seeded invite codes:", codes);
 const httpServer = createHttpServer(async (req, res) => {
   // CORS
   res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS");
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, mcp-session-id");
 
   if (req.method === "OPTIONS") {
@@ -25,8 +26,9 @@ const httpServer = createHttpServer(async (req, res) => {
     return;
   }
 
-  // Landing page
   const parsedUrl = new URL(req.url || "/", `http://localhost:${PORT}`);
+
+  // Landing page
   if (parsedUrl.pathname === "/" || parsedUrl.pathname === "") {
     try {
       const lang = parsedUrl.searchParams.get("lang") === "en" ? "en" : "zh";
@@ -41,8 +43,49 @@ const httpServer = createHttpServer(async (req, res) => {
     return;
   }
 
-  // Only handle /mcp
-  if (req.url !== "/mcp") {
+  // REST API: /api/rest/*
+  if (parsedUrl.pathname.startsWith("/api/rest")) {
+    let body: Record<string, unknown> = {};
+    if (req.method === "POST" || req.method === "PUT") {
+      const chunks: Buffer[] = [];
+      for await (const chunk of req) {
+        chunks.push(chunk as Buffer);
+      }
+      try {
+        body = JSON.parse(Buffer.concat(chunks).toString());
+      } catch {
+        res.writeHead(400, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: "Invalid JSON" }));
+        return;
+      }
+    }
+
+    const query: Record<string, string> = {};
+    parsedUrl.searchParams.forEach((v, k) => { query[k] = v; });
+
+    try {
+      const pathname = parsedUrl.pathname.replace(/^\/api\/rest/, "") || "/";
+      const result = await handleRestRequest({
+        method: req.method || "GET",
+        pathname,
+        body,
+        query,
+        headers: { authorization: req.headers.authorization },
+      });
+      res.writeHead(result.status, { "Content-Type": "application/json" });
+      res.end(JSON.stringify(result.data));
+    } catch (err) {
+      console.error("REST error:", err);
+      if (!res.headersSent) {
+        res.writeHead(500, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: "Internal server error" }));
+      }
+    }
+    return;
+  }
+
+  // MCP endpoint: /mcp
+  if (parsedUrl.pathname !== "/mcp") {
     res.writeHead(404);
     res.end("Not found");
     return;
@@ -100,5 +143,7 @@ const httpServer = createHttpServer(async (req, res) => {
 });
 
 httpServer.listen(PORT, () => {
-  console.log(`Data Coffee MCP server running at http://localhost:${PORT}/mcp`);
+  console.log(`Data Coffee server running at http://localhost:${PORT}`);
+  console.log(`  MCP endpoint: http://localhost:${PORT}/mcp`);
+  console.log(`  REST API:     http://localhost:${PORT}/api/rest/...`);
 });
