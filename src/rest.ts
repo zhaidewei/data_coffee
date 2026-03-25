@@ -2,10 +2,7 @@ import { profileRegister, profileGet, profileUpdate, adminCreateInviteCodes } fr
 import { coffeeCreate, coffeeList, coffeeJoin, coffeeDetail, coffeeLeave, coffeeUpdate, coffeeComplete } from "./services/coffee.js";
 import { messageSend, messageInbox, messageRead } from "./services/message.js";
 import { validateToken, extractBearerToken } from "./auth.js";
-import { migrate } from "./db.js";
 import { getOpenApiSpec } from "./openapi.js";
-
-let migrated = false;
 
 interface RestRequest {
   method: string;
@@ -38,11 +35,6 @@ function requireAuth(userId: string | null): RestResponse | null {
 
 /** Route a REST request to the appropriate service function */
 export async function handleRestRequest(req: RestRequest): Promise<RestResponse> {
-  if (!migrated) {
-    await migrate();
-    migrated = true;
-  }
-
   const { method, pathname, body, query, headers } = req;
   const userId = await authenticate(headers);
 
