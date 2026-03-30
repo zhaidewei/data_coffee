@@ -18,6 +18,12 @@ export function registerProfileTools(server: McpServer) {
     {
       nickname: z.string().describe("Your display name"),
       bio: z.string().describe("Self-introduction in natural language (skills, role, city, etc.)"),
+      city: z.string().optional().describe("City in Netherlands (e.g. Amsterdam, Rotterdam)"),
+      company: z.string().optional().describe("Company or organization"),
+      role: z.string().optional().describe("Job title / role"),
+      skills: z.array(z.string()).optional().describe("List of skills/technologies"),
+      available: z.array(z.string()).optional().describe("Availability slots (e.g. weekday_evening, weekend)"),
+      languages: z.array(z.string()).optional().describe("Languages spoken"),
     },
     async ({ nickname, bio }) => jsonResult(await profileRegister({ nickname, bio }))
   );

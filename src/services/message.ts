@@ -106,6 +106,7 @@ export async function messageInbox(
     unread?: boolean;
     coffee_id?: string;
     limit?: number;
+    mark_read?: boolean;
   },
   userId: string
 ) {
@@ -181,10 +182,21 @@ export async function messageInbox(
     created_at: row.created_at,
   }));
 
+  // Auto mark returned messages as read
+  if (params.mark_read) {
+    const unreadIds = messages.filter((m) => !m.read).map((m) => m.id);
+    for (const msgId of unreadIds) {
+      await db.execute({
+        sql: `INSERT OR IGNORE INTO message_reads (message_id, user_id) VALUES (?, ?)`,
+        args: [msgId, userId],
+      });
+    }
+  }
+
   return {
     messages,
     total: messages.length,
-    unread_count: unreadResult.rows[0].cnt,
+    unread_count: params.mark_read ? 0 : unreadResult.rows[0].cnt,
   };
 }
 
