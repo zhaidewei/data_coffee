@@ -193,10 +193,22 @@ export async function messageInbox(
     }
   }
 
+  // Recount unread after potential mark_read to return accurate count
+  let unreadCount = unreadResult.rows[0].cnt as number;
+  if (params.mark_read) {
+    const recount = await db.execute({
+      sql: `SELECT COUNT(*) as cnt FROM messages m
+            LEFT JOIN message_reads mr ON m.id = mr.message_id AND mr.user_id = ?
+            WHERE ${whereClause} AND mr.read_at IS NULL`,
+      args: [userId, ...args.slice(0, -1)] as any[],
+    });
+    unreadCount = recount.rows[0].cnt as number;
+  }
+
   return {
     messages,
     total: messages.length,
-    unread_count: params.mark_read ? 0 : unreadResult.rows[0].cnt,
+    unread_count: unreadCount,
   };
 }
 

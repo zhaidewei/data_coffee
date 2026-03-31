@@ -77,8 +77,25 @@ export async function coffeeList(params: { city?: string; tag?: string; limit?: 
     args: args as any[],
   });
 
-  const coffees = [];
-  for (const row of result.rows) {
+  // Batch-load participants if requested (avoid N+1)
+  const coffeeIds = result.rows.map((r) => r.id as string);
+  const participantMap = new Map<string, string[]>();
+  if (params.include_participants && coffeeIds.length > 0) {
+    const placeholders = coffeeIds.map(() => "?").join(",");
+    const parts = await db.execute({
+      sql: `SELECT cp.coffee_id, u.nickname FROM coffee_participants cp
+            JOIN users u ON cp.user_id = u.id
+            WHERE cp.coffee_id IN (${placeholders})`,
+      args: coffeeIds,
+    });
+    for (const p of parts.rows) {
+      const cid = p.coffee_id as string;
+      if (!participantMap.has(cid)) participantMap.set(cid, []);
+      participantMap.get(cid)!.push(p.nickname as string);
+    }
+  }
+
+  const coffees = result.rows.map((row) => {
     const coffee: Record<string, unknown> = {
       id: row.id,
       topic: row.topic,
@@ -95,17 +112,11 @@ export async function coffeeList(params: { city?: string; tag?: string; limit?: 
     };
 
     if (params.include_participants) {
-      const parts = await db.execute({
-        sql: `SELECT u.nickname FROM coffee_participants cp
-              JOIN users u ON cp.user_id = u.id
-              WHERE cp.coffee_id = ?`,
-        args: [row.id],
-      });
-      coffee.participants = parts.rows.map((p) => p.nickname);
+      coffee.participants = participantMap.get(row.id as string) || [];
     }
 
-    coffees.push(coffee);
-  }
+    return coffee;
+  });
 
   return { coffees, total: coffees.length };
 }

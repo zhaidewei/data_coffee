@@ -25,7 +25,7 @@ export function registerProfileTools(server: McpServer) {
       available: z.array(z.string()).optional().describe("Availability slots (e.g. weekday_evening, weekend)"),
       languages: z.array(z.string()).optional().describe("Languages spoken"),
     },
-    async ({ nickname, bio }) => jsonResult(await profileRegister({ nickname, bio }))
+    async (params) => jsonResult(await profileRegister(params))
   );
 
   server.tool(

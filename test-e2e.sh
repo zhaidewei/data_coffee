@@ -165,6 +165,22 @@ assert_contains "Bob registered" "$RESP_B" "Registration successful"
 echo "  → Bob: $USER_B"
 echo ""
 
+# ── 4b. Profile Registration with full fields ─────────────
+
+echo "[4b] Profile Registration with full fields (fat tool)"
+
+RESP_D=$(call_tool "" "profile_register" '{"nickname":"TestDiana","bio":"Full stack dev","city":"Utrecht","company":"Acme","role":"Developer","skills":["TypeScript","React"],"available":["weekday_evening"],"languages":["English","Dutch"]}' 15 | parse_text)
+TOKEN_D=$(echo "$RESP_D" | extract "token")
+assert_contains "Diana registered" "$RESP_D" "Registration successful"
+
+PROFILE_D=$(call_tool "$TOKEN_D" "profile_get" '{"query":"TestDiana"}' 16 | parse_text)
+assert_contains "Profile has city from register" "$PROFILE_D" "Utrecht"
+assert_contains "Profile has company from register" "$PROFILE_D" "Acme"
+assert_contains "Profile has role from register" "$PROFILE_D" "Developer"
+assert_contains "Profile has skills from register" "$PROFILE_D" "TypeScript"
+assert_contains "Profile has languages from register" "$PROFILE_D" "Dutch"
+echo ""
+
 # ── 5. Profile Get & Update ─────────────────────────────────
 
 echo "[5] Profile Get & Update"
@@ -202,6 +218,10 @@ assert_contains "City filter works" "$LIST_CITY" "E2E Test Coffee"
 LIST_OTHER=$(call_tool "" "coffee_list" '{"city":"Nowhere"}' 23 | parse_text)
 TOTAL_OTHER=$(echo "$LIST_OTHER" | extract "total")
 assert_eq "City filter excludes non-matching" "$TOTAL_OTHER" "0"
+
+# include_participants
+LIST_PARTS=$(call_tool "" "coffee_list" '{"include_participants":true}' 24 | parse_text)
+assert_contains "include_participants shows Alice" "$LIST_PARTS" "TestAlice"
 echo ""
 
 # ── 8. Coffee Join ───────────────────────────────────────────
@@ -210,6 +230,8 @@ echo "[8] Coffee Join"
 
 JOIN=$(call_tool "$TOKEN_B" "coffee_join" "{\"coffee_id\":\"$COFFEE_ID\"}" 30 | parse_text)
 assert_contains "Bob joined coffee" "$JOIN" "You joined"
+assert_contains "Join returns full detail with participants" "$JOIN" "TestAlice"
+assert_contains "Join returns full detail with topic" "$JOIN" "E2E Test Coffee"
 
 # Try joining again
 JOIN_DUP=$(call_tool "$TOKEN_B" "coffee_join" "{\"coffee_id\":\"$COFFEE_ID\"}" 31 | parse_text)
@@ -302,6 +324,26 @@ assert_contains "Alice sees Bob's coffee message" "$INBOX_A" "Looking forward"
 INBOX_UNREAD=$(call_tool "$TOKEN_B" "message_inbox" '{"unread":true}' 74 | parse_text)
 UNREAD_COUNT=$(echo "$INBOX_UNREAD" | extract "unread_count")
 assert_gt "Unread filter returns unread messages" "$UNREAD_COUNT" 0
+echo ""
+
+# ── 13b. Inbox mark_read ───────────────────────────────────
+
+echo "[13b] Inbox mark_read (fat tool)"
+
+# Send multiple DMs to Charlie so we can test partial mark_read
+call_tool "$TOKEN_A" "message_send" '{"to":"TestCharlie","content":"Msg 1 for Charlie"}' 75 > /dev/null
+call_tool "$TOKEN_A" "message_send" '{"to":"TestCharlie","content":"Msg 2 for Charlie"}' 76 > /dev/null
+call_tool "$TOKEN_A" "message_send" '{"to":"TestCharlie","content":"Msg 3 for Charlie"}' 77 > /dev/null
+
+# mark_read with limit=2: should mark only 2, but 1+ remain unread
+INBOX_MR=$(call_tool "$TOKEN_C" "message_inbox" '{"mark_read":true,"limit":2}' 78 | parse_text)
+UNREAD_MR=$(echo "$INBOX_MR" | extract "unread_count")
+assert_gt "mark_read with limit: unread_count > 0 (not all marked)" "$UNREAD_MR" 0
+
+# mark_read all remaining
+INBOX_MR2=$(call_tool "$TOKEN_C" "message_inbox" '{"mark_read":true}' 79 | parse_text)
+UNREAD_MR2=$(echo "$INBOX_MR2" | extract "unread_count")
+assert_eq "mark_read all: unread_count is 0" "$UNREAD_MR2" "0"
 echo ""
 
 # ── 14. Message Read ────────────────────────────────────────
