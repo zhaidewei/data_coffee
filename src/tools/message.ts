@@ -39,6 +39,7 @@ export function registerMessageTools(server: McpServer) {
       unread: z.boolean().default(false).describe("Show only unread messages"),
       coffee_id: z.string().optional().describe("View messages for a specific coffee"),
       limit: z.number().min(1).max(50).default(20).describe("Max results"),
+      mark_read: z.boolean().default(false).describe("Automatically mark returned messages as read"),
     },
     async (params, { authInfo }) => {
       const userId = (authInfo?.extra as { userId?: string })?.userId;

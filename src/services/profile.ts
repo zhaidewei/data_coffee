@@ -1,7 +1,16 @@
 import { getDb } from "../db.js";
 import { generateToken, generateId, createInviteCodes } from "../auth.js";
 
-export async function profileRegister(params: { nickname: string; bio: string }) {
+export async function profileRegister(params: {
+  nickname: string;
+  bio: string;
+  city?: string;
+  company?: string;
+  role?: string;
+  skills?: string[];
+  available?: string[];
+  languages?: string[];
+}) {
   const db = getDb();
   const id = generateId("u");
   const token = generateToken();
@@ -12,8 +21,18 @@ export async function profileRegister(params: { nickname: string; bio: string })
   });
 
   await db.execute({
-    sql: "INSERT INTO profiles (user_id, bio) VALUES (?, ?)",
-    args: [id, params.bio],
+    sql: `INSERT INTO profiles (user_id, bio, city, company, role, skills, available, languages)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    args: [
+      id,
+      params.bio,
+      params.city || null,
+      params.company || null,
+      params.role || null,
+      JSON.stringify(params.skills || []),
+      JSON.stringify(params.available || []),
+      JSON.stringify(params.languages || []),
+    ],
   });
 
   return {

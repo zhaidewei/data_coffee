@@ -41,6 +41,7 @@ export function registerCoffeeTools(server: McpServer) {
       city: z.string().optional().describe("Filter by city"),
       tag: z.string().optional().describe("Filter by tag"),
       limit: z.number().min(1).max(50).default(20).describe("Max results"),
+      include_participants: z.boolean().default(false).describe("Include participant nicknames for each coffee"),
     },
     async (params) => jsonResult(await coffeeList(params))
   );

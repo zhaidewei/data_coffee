@@ -1,26 +1,7 @@
 {
   "buildCommand": "npm run build",
   "outputDirectory": "public",
-  "functions": {
-    "api/mcp.ts": {
-      "includeFiles": "src/**"
-    },
-    "api/index.ts": {
-      "includeFiles": "src/**"
-    },
-    "api/rest.ts": {
-      "includeFiles": "src/**"
-    }
-  },
   "rewrites": [
-    { "source": "/", "destination": "/api/index" },
-    { "source": "/mcp", "destination": "/api/mcp" },
-    { "source": "/api/rest/:path*", "destination": "/api/rest" }
-  ],
-  "crons": [
-    {
-      "path": "/api/cron/weekly-report",
-      "schedule": "0 10 * * 0"
-    }
+    { "source": "/:path*", "destination": "/index.html" }
   ]
 }

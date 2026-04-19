@@ -47,7 +47,7 @@ export async function coffeeCreate(
   };
 }
 
-export async function coffeeList(params: { city?: string; tag?: string; limit?: number }) {
+export async function coffeeList(params: { city?: string; tag?: string; limit?: number; include_participants?: boolean }) {
   const db = getDb();
   const conditions = ["c.status IN ('open', 'full', 'confirmed')"];
   const args: unknown[] = [];
@@ -77,20 +77,46 @@ export async function coffeeList(params: { city?: string; tag?: string; limit?: 
     args: args as any[],
   });
 
-  const coffees = result.rows.map((row) => ({
-    id: row.id,
-    topic: row.topic,
-    description: row.description,
-    creator: row.creator_name,
-    city: row.city || "online",
-    location: row.location,
-    scheduled_at: row.scheduled_at,
-    participants: row.participant_count,
-    max_size: row.max_size,
-    status: row.status,
-    tags: JSON.parse((row.tags as string) || "[]"),
-    created_at: row.created_at,
-  }));
+  // Batch-load participants if requested (avoid N+1)
+  const coffeeIds = result.rows.map((r) => r.id as string);
+  const participantMap = new Map<string, string[]>();
+  if (params.include_participants && coffeeIds.length > 0) {
+    const placeholders = coffeeIds.map(() => "?").join(",");
+    const parts = await db.execute({
+      sql: `SELECT cp.coffee_id, u.nickname FROM coffee_participants cp
+            JOIN users u ON cp.user_id = u.id
+            WHERE cp.coffee_id IN (${placeholders})`,
+      args: coffeeIds,
+    });
+    for (const p of parts.rows) {
+      const cid = p.coffee_id as string;
+      if (!participantMap.has(cid)) participantMap.set(cid, []);
+      participantMap.get(cid)!.push(p.nickname as string);
+    }
+  }
+
+  const coffees = result.rows.map((row) => {
+    const coffee: Record<string, unknown> = {
+      id: row.id,
+      topic: row.topic,
+      description: row.description,
+      creator: row.creator_name,
+      city: row.city || "online",
+      location: row.location,
+      scheduled_at: row.scheduled_at,
+      participant_count: row.participant_count,
+      max_size: row.max_size,
+      status: row.status,
+      tags: JSON.parse((row.tags as string) || "[]"),
+      created_at: row.created_at,
+    };
+
+    if (params.include_participants) {
+      coffee.participants = participantMap.get(row.id as string) || [];
+    }
+
+    return coffee;
+  });
 
   return { coffees, total: coffees.length };
 }
@@ -146,11 +172,12 @@ export async function coffeeJoin(params: { coffee_id: string }, userId: string) 
   const joinerName = joiner.rows[0]?.nickname || "Someone";
   await createSystemMessage(c.creator_id as string, `${joinerName} 加入了你的 coffee「${c.topic}」`);
 
+  // Return full detail so LLM doesn't need a separate coffee_detail call
+  const detail = await coffeeDetail(params);
   return {
     success: true,
-    coffee_id: params.coffee_id,
-    topic: c.topic,
     message: "You joined the coffee!",
+    ...detail,
   };
 }
 
