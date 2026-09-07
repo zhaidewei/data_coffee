@@ -53,16 +53,16 @@ export async function project(env:Env,e:Activity,user:User|null,summary=false):P
   const manager=!!user&&isManager(e,user.id);const mine=e.participants.find(p=>p.userId===user?.id)??null;
   if(e.status==='draft'&&e.ownerId!==user?.id)fail('活动不存在',404);
   const addressAllowed=e.rules.addressVisibility==='public'||manager||mine?.status==='joined';
-  const base:Record<string,unknown>={id:e.id,title:e.title,city:e.city,description:e.description,rules:e.rules,status:e.status,version:e.version,createdAt:e.createdAt,publishedAt:e.publishedAt,reason:e.reason,counts:{joined:joined(e).length,waitlisted:e.participants.filter(p=>p.status==='waitlisted').length},conditions:conditions(e),repairs:e.repairs,canManage:manager,isOwner:user?.id===e.ownerId};
+  const base:Record<string,unknown>={id:e.id,title:e.title,city:e.city,description:e.description,selectedSlotId:e.selectedSlotId,rules:e.rules,status:e.status,version:e.version,createdAt:e.createdAt,publishedAt:e.publishedAt,reason:e.reason,counts:{joined:joined(e).length,waitlisted:e.participants.filter(p=>p.status==='waitlisted').length},conditions:conditions(e),repairs:e.repairs,canManage:manager,isOwner:user?.id===e.ownerId};
   if(summary)return base;
   const preferenceCounts=(key:'timePreference'|'placePreference')=>[...e.participants.filter(p=>p.status!=='left'&&p[key]).reduce((m,p)=>m.set(p[key]!,1+(m.get(p[key]!)??0)),new Map<string,number>())].sort((a,b)=>b[1]-a[1]||a[0].localeCompare(b[0])).slice(0,8).map(([label,count])=>({label,count}));
-  base.preferenceSummary={times:preferenceCounts('timePreference'),places:preferenceCounts('placePreference')};
+  base.preferenceSummary={slots:(e.rules.timeSlots||[]).map(slot=>({id:slot.id,label:new Date(slot.startsAt).toISOString(),count:e.participants.filter(p=>p.status!=='left'&&p.availableSlotIds?.includes(slot.id)).length})),times:preferenceCounts('timePreference'),places:preferenceCounts('placePreference'),transport:[['public_transport','公共交通'],['car','开车']].map(([value,label])=>({label,count:e.participants.filter(p=>p.status!=='left'&&p.transportPreferences?.includes(value)).length}))};
   const ids=[...new Set(e.participants.filter(p=>p.status!=='left').map(p=>p.userId))];
   const names=new Map<string,{nickname:string;public_nickname:number}>();
   // D1 variable limit is 100; keep batches below it.
   for(let i=0;i<ids.length;i+=80){const batch=ids.slice(i,i+80);const res=await env.DB.prepare(`SELECT id,nickname,public_nickname FROM users WHERE id IN (${batch.map(()=>'?').join(',')})`).bind(...batch).all<{id:string;nickname:string;public_nickname:number}>();for(const n of res.results)names.set(n.id,n);}
-  base.participants=e.participants.filter(p=>p.status!=='left').map(p=>{const n=names.get(p.userId);return {nickname:n&&(n.public_nickname||manager||user?.id===p.userId)?n.nickname:'匿名成员',status:p.status,isMe:user?.id===p.userId};});
-  base.myParticipation=mine?{status:mine.status,appliedAt:mine.appliedAt,timePreference:mine.timePreference,placePreference:mine.placePreference,position:mine.status==='waitlisted'?e.participants.filter(p=>p.status==='waitlisted'&&p.order<=mine.order).length:undefined}:null;
+  base.participants=e.participants.filter(p=>p.status!=='left').map(p=>{const n=names.get(p.userId);return {nickname:n&&(n.public_nickname||manager||user?.id===p.userId)?n.nickname:'匿名成员',registrationMessage:p.registrationMessage,status:p.status,isMe:user?.id===p.userId};});
+  base.myParticipation=mine?{status:mine.status,availableSlotIds:mine.availableSlotIds||[],appliedAt:mine.appliedAt,timePreference:mine.timePreference,placePreference:mine.placePreference,transportPreferences:mine.transportPreferences||[],registrationMessage:mine.registrationMessage||'',position:mine.status==='waitlisted'?e.participants.filter(p=>p.status==='waitlisted'&&p.order<=mine.order).length:undefined}:null;
   const visible=(a:Activity['applications'][number])=>manager||a.userId===user?.id||(['venue','talk','material','pledge'].includes(a.kind)&&a.status==='approved');
   const appProjection=(a:Activity['applications'][number])=>{
     const own=a.userId===user?.id;

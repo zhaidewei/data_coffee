@@ -10,7 +10,7 @@ export function textValue(value: unknown, label: string, max = 500, min = 1): st
 }
 export function validateRules(input: unknown, now: number): Rules {
   if (!input || typeof input !== 'object') return fail('请填写活动规则');
-  const r = input as Rules;
+  const r = {...input,minTalks:0,minCohosts:0,continuousTalks:false,continuousCohosts:false,allowRoleOverlap:true} as Rules;
   const ints: [keyof Rules, number, number][] = [['minPeople',1,700],['maxPeople',1,700],['minTalks',0,20],['minCohosts',0,20],['minHosts',0,20],['repairMinutes',1,10080]];
   for (const [key,min,max] of ints) if (!Number.isInteger(r[key]) || Number(r[key]) < min || Number(r[key]) > max) fail(`${key} 超出有效范围`);
   for (const key of ['recruitmentDeadline','startsAt','endsAt','registrationDeadline','promotionDeadline'] as const) if (!Number.isSafeInteger(r[key])) fail('请填写有效日期时间');
@@ -20,7 +20,17 @@ export function validateRules(input: unknown, now: number): Rules {
   if (!(now < r.recruitmentDeadline && r.recruitmentDeadline < r.startsAt && r.startsAt < r.endsAt)) fail('须满足：当前时间 < 征集截止 < 活动开始 < 活动结束');
   for (const key of ['registrationDeadline','promotionDeadline'] as const) if (r[key] < r.recruitmentDeadline || r[key] > r.startsAt) fail('报名和递补截止须在征集截止与活动开始之间');
   if (r.endsAt - r.startsAt > 7 * 86400000 || r.startsAt - now > 366 * 86400000) fail('活动时间超出支持范围');
-  return Object.fromEntries([...ints.map(x=>x[0]), 'recruitmentDeadline','startsAt','endsAt','registrationDeadline','promotionDeadline','waitlist','venueRequired','allowRoleOverlap','continuousVenue','continuousTalks','continuousCohosts','continuousHosts','addressVisibility'].map(k => [k,(r as any)[k]])) as unknown as Rules;
+  if(r.timeSlots!==undefined){
+    if(!Array.isArray(r.timeSlots)||r.timeSlots.length<1||r.timeSlots.length>20)fail('请选择 1–20 个候选时段');
+    const ids=new Set<string>(),times=new Set<number>();
+    for(const slot of r.timeSlots){
+      if(!slot||typeof slot.id!=='string'||!/^[-a-zA-Z0-9_]{1,80}$/.test(slot.id)||ids.has(slot.id)||times.has(slot.startsAt))fail('候选时段重复或标识无效');
+      if(!Number.isSafeInteger(slot.startsAt)||!Number.isSafeInteger(slot.endsAt)||slot.startsAt<r.startsAt||slot.endsAt<=slot.startsAt||slot.endsAt-slot.startsAt>7*86400000||slot.startsAt-now>366*86400000)fail('候选时段日期无效');
+      ids.add(slot.id);times.add(slot.startsAt);
+    }
+    if(!r.timeSlots.some(slot=>slot.startsAt===r.startsAt&&slot.endsAt===r.endsAt))fail('默认时间须为最早候选时段');
+  }
+  return Object.fromEntries([...ints.map(x=>x[0]), 'recruitmentDeadline','startsAt','endsAt','registrationDeadline','promotionDeadline','waitlist','venueRequired','allowRoleOverlap','continuousVenue','continuousTalks','continuousCohosts','continuousHosts','addressVisibility',...(r.timeSlots?['timeSlots']:[])].map(k => [k,(r as any)[k]])) as unknown as Rules;
 }
 export function createActivity(input: Record<string,unknown>, ownerId: string, now: number, id = crypto.randomUUID()): Activity {
   return {id,ownerId,title:textValue(input.title,'标题',100),city:textValue(input.city,'城市',80),description:textValue(input.description??'','介绍',4000,0),rules:validateRules(input.rules,now),status:'draft',version:0,createdAt:now,participants:[],applications:[],repairs:[],receipts:[],sequence:0,processed:[]};
@@ -34,12 +44,10 @@ export function conditions(e: Activity): Condition[] {
   const r=e.rules;
   const result: Condition[] = [];
   const add=(key:string,label:string,current:number,required:number,continuous:boolean)=>{if(required>0)result.push({key,label,current,required,satisfied:current>=required,continuous});};
-  add('people','参与人数',joined(e).length,r.minPeople,true);
+  add('people','参与人数',r.timeSlots&&!e.selectedSlotId?0:joined(e).filter(p=>!e.selectedSlotId||p.availableSlotIds?.includes(e.selectedSlotId)).length,r.minPeople,true);
+  if(r.timeSlots)add('time','最终时间已确认',e.selectedSlotId?1:0,1,false);
   add('venue','已确认场地容量',Math.max(0,...approved.filter(a=>a.kind==='venue').map(a=>a.capacity??0)),r.venueRequired?r.maxPeople:0,r.continuousVenue);
-  add('talks','已确认分享',approved.filter(a=>a.kind==='talk').length,r.minTalks,r.continuousTalks);
-  add('cohosts','已批准协办',cohosts.size,r.minCohosts,r.continuousCohosts);
   add('hosts','已确认现场负责人',hosts.size,r.minHosts,r.continuousHosts);
-  if(!r.allowRoleOverlap && r.minHosts>0 && r.minCohosts>0) add('roles','不兼任的负责人及协办',new Set([...hosts,...cohosts]).size,r.minHosts+r.minCohosts,r.continuousHosts||r.continuousCohosts);
   return result;
 }
 function recipients(e:Activity) {return [...new Set([e.ownerId,...e.participants.filter(p=>p.status!=='left').map(p=>p.userId),...e.applications.filter(a=>a.status==='approved').map(a=>a.userId)])];}
@@ -49,7 +57,7 @@ function cancel(e:Activity,now:number,reason:string,out:Notice[]) {e.status='can
 function promote(e:Activity,now:number,out:Notice[]) {
   if (!e.rules.waitlist || now>=e.rules.promotionDeadline || now>=e.rules.startsAt) return;
   let free=e.rules.maxPeople-joined(e).length;
-  for (const p of e.participants.filter(p=>p.status==='waitlisted').sort((a,b)=>a.order-b.order)) {
+  for (const p of e.participants.filter(p=>p.status==='waitlisted'&&(!e.selectedSlotId||p.availableSlotIds?.includes(e.selectedSlotId))).sort((a,b)=>a.order-b.order)) {
     if(free--<=0)break;
     p.status='joined';
     out.push({userId:p.userId,subject:'候补已入选',text:`你已正式报名「${e.title}」。请查看活动时间和地点，如无法参加请及时退出。`});
@@ -57,6 +65,7 @@ function promote(e:Activity,now:number,out:Notice[]) {
 }
 /** All overdue deadlines are resolved BEFORE a new command. No client-supplied time. */
 export function reconcile(e:Activity,now:number,out:Notice[]):void {
+  e.repairs=e.repairs.filter(r=>!['talks','cohosts','roles'].includes(r.key));
   if(e.status==='draft'||e.status==='cancelled'||e.status==='completed')return;
   if(e.status==='recruiting' && now>=e.rules.recruitmentDeadline) {
     const missing=conditions(e).filter(c=>!c.satisfied);
@@ -106,12 +115,36 @@ export function applyCommand(e:Activity,cmd:Command,userId:string,now:number,out
       break;
     }
     case 'publish': owner(e,userId);if(e.status!=='draft')fail('活动已经发布',409);validateRules(e.rules,now);e.status='recruiting';e.publishedAt=now;record(e,now,'published','征集已发布，规则锁定');break;
+    case 'select_time': {
+      owner(e,userId);
+      if(e.status!=='recruiting'||now>=e.rules.recruitmentDeadline||e.selectedSlotId)fail('只能在征集截止前确认一次最终时间',409);
+      const slot=e.rules.timeSlots?.find(s=>s.id===cmd.slotId);if(!slot)fail('候选时段不存在');
+      e.selectedSlotId=slot.id;e.rules.startsAt=slot.startsAt;e.rules.endsAt=slot.endsAt;
+      let seats=e.rules.maxPeople;
+      for(const p of e.participants.filter(p=>p.status!=='left').sort((a,b)=>a.order-b.order))p.status=p.availableSlotIds?.includes(slot.id)&&seats-->0?'joined':'waitlisted';
+      record(e,now,'time_selected','最终时段已确认');
+      announce(e,out,'活动时间已确认',new Date(slot.startsAt).toISOString()+'；仅能参加该时段的报名者计入成行人数，请查看报名状态。');
+      break;
+    }
     case 'join': {
       if(e.status==='draft')fail('征集尚未发布',409);
       let p=e.participants.find(p=>p.userId===userId);
+      let availableSlotIds=p?.availableSlotIds;
+      if(e.rules.timeSlots){
+        const input=cmd.availableSlotIds??availableSlotIds;
+        if(!Array.isArray(input)||input.length<1||input.length>20||input.some(id=>typeof id!=='string'||!e.rules.timeSlots!.some(s=>s.id===id)))fail('请至少选择一个有效候选时段');
+        availableSlotIds=[...new Set(input)] as string[];
+        if(e.selectedSlotId&&!availableSlotIds.includes(e.selectedSlotId))fail('最终时间已确定；无法参加请退出报名');
+      }
       const timePreference=cmd.timePreference===undefined?undefined:textValue(cmd.timePreference,'时间偏好',80,0);
       const placePreference=cmd.placePreference===undefined?undefined:textValue(cmd.placePreference,'地点偏好',80,0);
+      if(cmd.transportPreferences!==undefined&&(!Array.isArray(cmd.transportPreferences)||cmd.transportPreferences.length>2||cmd.transportPreferences.some(v=>!['public_transport','car'].includes(String(v)))))fail('交通偏好无效');
+      const transportPreferences=cmd.transportPreferences===undefined?undefined:[...new Set(cmd.transportPreferences as string[])];
+      const registrationMessage=cmd.registrationMessage===undefined?undefined:textValue(cmd.registrationMessage,'报名留言',500,0);
       const savePreferences=(participant:Participant)=>{
+        if(availableSlotIds!==undefined)participant.availableSlotIds=availableSlotIds;
+        if(transportPreferences!==undefined)participant.transportPreferences=transportPreferences;
+        if(registrationMessage!==undefined)participant.registrationMessage=registrationMessage;
         if(timePreference!==undefined)participant.timePreference=timePreference;
         if(placePreference!==undefined)participant.placePreference=placePreference;
       };
@@ -122,11 +155,11 @@ export function applyCommand(e:Activity,cmd:Command,userId:string,now:number,out
       promote(e,now,out);
       p=e.participants.find(p=>p.userId===userId);
       if(p?.status==='joined'){savePreferences(p);break;}
-      const full=joined(e).length>=e.rules.maxPeople;
+      const full=!(e.rules.timeSlots&&!e.selectedSlotId)&&joined(e).length>=e.rules.maxPeople;
       if(full&&(!e.rules.waitlist||now>=e.rules.promotionDeadline))fail('名额已满，候补已关闭',409);
       if(p?.status==='waitlisted'&&full){savePreferences(p);break;}
       const status=full?'waitlisted':'joined';
-      if(p){p.status=status;p.appliedAt=now;p.order=++e.sequence;savePreferences(p);}else e.participants.push({userId,status,appliedAt:now,order:++e.sequence,timePreference,placePreference});
+      if(p){p.status=status;p.appliedAt=now;p.order=++e.sequence;savePreferences(p);}else e.participants.push({userId,status,appliedAt:now,order:++e.sequence,availableSlotIds,timePreference,placePreference,transportPreferences,registrationMessage});
       if(e.participants.length>2000)fail('本场报名记录已达上限');
       break;
     }
@@ -149,9 +182,10 @@ export function applyCommand(e:Activity,cmd:Command,userId:string,now:number,out
     }
     case 'review': {
       const a=e.applications.find(a=>a.id===cmd.applicationId);if(!a)fail('申请不存在',404);
-      if(a.kind==='cohost')owner(e,userId);else manager(e,userId);
+      if(['cohost','venue','host'].includes(a.kind))owner(e,userId);else manager(e,userId);
       if(a.status!=='pending')fail('申请已处理或撤回',409);
       if(typeof cmd.approved!=='boolean')fail('请选择批准或拒绝');
+      if(a.kind==='venue'&&cmd.approved){for(const other of e.applications)if(other.kind==='venue'&&other.status==='approved'&&other.id!==a.id)other.status='pending';}
       a.status=cmd.approved?'approved':'rejected';a.reviewedBy=userId;a.reason=textValue(cmd.reason??'','审核说明',500,0);a.updatedAt=now;
       out.push({userId:a.userId,subject:'申请审批结果',text:`你在「${e.title}」的申请已${cmd.approved?'通过':'拒绝'}。${a.reason}`});break;
     }
