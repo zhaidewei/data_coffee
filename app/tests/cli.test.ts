@@ -74,3 +74,36 @@ describe('CLI 输入边界与失败处理',()=>{
   it('非 JSON 响应返回服务错误',async()=>{const r=await invoke(['events','list'],new Response('<html>bad gateway</html>',{status:502}));expect(r.code).toBe(1);expect(r.stdout).toBe('');expect(JSON.parse(r.stderr).status).toBe(502);});
   it('显式会话输出缺少 cookie 时失败',async()=>{const r=await invoke(['auth','verify','--data','{}','--session-only']);expect(r.code).toBe(1);expect(r.stdout).toBe('');});
 });
+
+describe('个人访问令牌认证',()=>{
+  const token='dcf_'+'a'.repeat(64);
+  it.each(['env','stdin'])('从 %s 发送 Bearer 且不打印令牌',async(source)=>{
+    const r=await invoke(['auth','me',...(source==='stdin'?['--token-stdin']:[])],undefined,source==='env'?{DATA_COFFEE_TOKEN:token}:{},token+'\n');
+    expect(r.code).toBe(0);expect(r.fetch.mock.calls[0][1].headers.Authorization).toBe(`Bearer ${token}`);
+    expect(r.fetch.mock.calls[0][1].headers.Cookie).toBeUndefined();expect(r.stdout+r.stderr).not.toContain(token);
+  });
+  it.each(['','dcf_invalid','a'.repeat(64),'dcf_'+'A'.repeat(64)])('拒绝无效 token %s',async(value)=>{
+    const r=await invoke(['auth','me'],undefined,{DATA_COFFEE_TOKEN:value});expect(r.code).toBe(2);expect(r.fetch).not.toHaveBeenCalled();
+    if(value)expect(r.stderr).not.toContain(value);
+  });
+  it.each([
+    {args:[],env:{DATA_COFFEE_TOKEN:token,DATA_COFFEE_SESSION:'b'.repeat(64)}},
+    {args:['--session-stdin'],env:{DATA_COFFEE_TOKEN:token}},
+    {args:['--token-stdin'],env:{DATA_COFFEE_SESSION:'b'.repeat(64)}},
+    {args:['--token-stdin','--session-stdin'],env:{}},
+    {args:['--token-stdin'],env:{DATA_COFFEE_TOKEN:token}},
+    {args:['--token',token],env:{}},
+    {args:['--token-stdin','--token-stdin'],env:{}},
+  ])('拒绝冲突来源及明文 argv $args',async({args,env})=>{
+    const r=await invoke(['auth','me',...args],undefined,env,token);expect(r.code).toBe(2);expect(r.fetch).not.toHaveBeenCalled();expect(r.stdout+r.stderr).not.toContain(token);
+  });
+  it('凭证和请求体不能共用 stdin',async()=>{
+    const r=await invoke(['events','create','--token-stdin','--data','-'],undefined,{},token);expect(r.code).toBe(2);expect(r.fetch).not.toHaveBeenCalled();
+  });
+  it('环境 token 可以与 stdin 请求体共用',async()=>{
+    const r=await invoke(['events','create','--data','-'],undefined,{DATA_COFFEE_TOKEN:token},'{"title":"草稿"}');expect(r.code).toBe(0);expect(r.fetch.mock.calls[0][1].headers.Authorization).toBe(`Bearer ${token}`);
+  });
+  it('token 不能发送到远端 HTTP',async()=>{
+    const r=await invoke(['auth','me','--base-url','http://example.com'],undefined,{DATA_COFFEE_TOKEN:token});expect(r.code).toBe(2);expect(r.fetch).not.toHaveBeenCalled();
+  });
+});

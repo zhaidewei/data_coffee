@@ -1,5 +1,6 @@
 import type { Env, User } from './types';
 import { sendEmail } from './mail';
+import { fail } from './engine';
 
 const SESSION_SECONDS = 30 * 24 * 60 * 60;
 const COOKIE = 'dc_session';
@@ -33,6 +34,16 @@ function cookie(request: Request, value: string, seconds: number): string {
 interface UserRow { id: string; email: string; nickname: string; public_nickname: number }
 const asUser = (row: UserRow): User => ({ id: row.id, email: row.email, nickname: row.nickname, publicNickname: row.public_nickname === 1 });
 export async function currentUser(request: Request, env: Env): Promise<User | null> {
+  const authorization = request.headers.get('Authorization');
+  if (authorization !== null) {
+    const raw = authorization.match(/^Bearer (dcf_[a-f0-9]{64})$/i)?.[1];
+    if (!raw) fail('API token 无效或已过期', 401);
+    const row = await env.DB.prepare(`SELECT u.*, t.scope FROM users u JOIN personal_tokens t ON t.user_id=u.id
+      WHERE t.token_hash=? AND t.expires_at>? AND t.revoked_at IS NULL`).bind(await hash(raw!), now()).first<UserRow & {scope:string}>();
+    if (!row) fail('API token 无效或已过期', 401);
+    if (row!.scope === 'read' && !['GET','HEAD'].includes(request.method)) fail('此 token 仅允许读取', 403);
+    return asUser(row!);
+  }
   const raw = sessionToken(request);
   if (!raw) return null;
   const row = await env.DB.prepare(`SELECT u.* FROM users u JOIN auth_sessions s ON s.user_id=u.id
@@ -153,4 +164,34 @@ export async function handleAuth(request: Request, env: Env): Promise<Response |
   ]);
   const user = asUser(results[2]!.results[0] as unknown as UserRow);
   return reply({ user }, 200, { 'Set-Cookie': cookie(request, raw, SESSION_SECONDS) });
+}
+
+// Token management is deliberately bound to an interactive cookie session.
+export async function handleTokens(request: Request, env: Env): Promise<Response | null> {
+  const path = new URL(request.url).pathname;
+  if (path !== '/api/tokens' && !path.startsWith('/api/tokens/')) return null;
+  if (request.headers.has('Authorization')) return failure('请使用网页登录管理 API token', 403);
+  const user = await currentUser(request, env);
+  if (!user) return failure('请先验证邮箱登录', 401);
+  const columns = 'id,name,scope,created_at AS createdAt,expires_at AS expiresAt,revoked_at AS revokedAt';
+  if (path === '/api/tokens' && request.method === 'GET') {
+    const rows = await env.DB.prepare(`SELECT ${columns} FROM personal_tokens WHERE user_id=? ORDER BY created_at DESC`).bind(user.id).all();
+    return reply({tokens:rows.results});
+  }
+  if (path === '/api/tokens' && request.method === 'POST') {
+    const data = await body(request);
+    const name = typeof data?.name === 'string' ? data.name.trim() : '';
+    const scope = data?.scope;
+    const days = data?.expiresDays === undefined ? 30 : data.expiresDays;
+    if (!name || name.length > 80 || /[\x00-\x1f\x7f]/.test(name) || (scope !== 'read' && scope !== 'write') || !Number.isInteger(days) || Number(days)<1 || Number(days)>365) return failure('请输入名称、read/write 权限和 1–365 天有效期');
+    const raw = `dcf_${token()}`, id = crypto.randomUUID(), createdAt = now(), expiresAt = createdAt + Number(days)*86400000;
+    await env.DB.prepare('INSERT INTO personal_tokens(id,user_id,name,scope,token_hash,created_at,expires_at) VALUES (?,?,?,?,?,?,?)').bind(id,user.id,name,scope,await hash(raw),createdAt,expiresAt).run();
+    return reply({token:raw,id,name,scope,createdAt,expiresAt,revokedAt:null},201);
+  }
+  const match = path.match(/^\/api\/tokens\/([a-zA-Z0-9-]+)$/);
+  if (match && request.method === 'DELETE') {
+    const row = await env.DB.prepare('UPDATE personal_tokens SET revoked_at=COALESCE(revoked_at,?) WHERE id=? AND user_id=? RETURNING id').bind(now(),match[1],user.id).first();
+    return row ? reply({revoked:true,id:match[1]}) : failure('Token 不存在',404);
+  }
+  return failure('不支持此操作',405);
 }

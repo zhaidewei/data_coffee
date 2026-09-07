@@ -18,7 +18,7 @@ npm run dev
 
 ## CLI 与 Agent 调用
 
-读者：通过终端或 Agent 操作活动的维护者与用户。CLI 使用网页相同的 HTTP API、邮箱身份及权限检查。Node.js 22+ 即可，无新增运行依赖；在本目录运行 `npm run cli -- --help`，脚本集成建议直接使用 `node cli/dc-flow.mjs`，避免 npm 输出干扰 JSON。
+读者：通过终端或 Agent 操作活动的维护者与用户。CLI 使用网页相同的 HTTP API、用户身份及权限检查，优先使用个人访问令牌。Node.js 22+ 即可，无新增运行依赖；在本目录运行 `npm run cli -- --help`，脚本集成建议直接使用 `node cli/dc-flow.mjs`，避免 npm 输出干扰 JSON。
 
 ```sh
 node cli/dc-flow.mjs events list
@@ -29,9 +29,11 @@ node cli/dc-flow.mjs events action EVENT_ID publish --version 0 --key publish-un
 
 `--base-url` 或 `DATA_COFFEE_BASE_URL` 指定服务地址，默认本地 `http://localhost:8787`；远端必须 HTTPS。`--data` 接收 JSON、`@文件` 或 `-`（stdin）。草稿结构与 `/api/events` POST 一致，动作附加字段与 `/api/events/:id/actions` 一致；CLI 不绕过服务端校验。所有修改动作显式提供当前 `version` 与唯一 `--key`；冲突退出码 4，需要重新读取并判断。未知结果重试同一次动作时复用原始 key 和参数；创建草稿 API 尚无幂等支持，超时后先查询活动列表，避免重复创建。CLI 不自动重试。
 
-邮箱登录：`auth request --data ...` 的 JSON 为 `{email}`，该命令会向目标服务请求真实验证码；`auth verify --data -` 接收 `{email,code,nickname}`。普通验证输出只含用户；显式 `--session-only` 输出 `{sessionToken}` 供管道捕获。会话仅经 `DATA_COFFEE_SESSION` 或 `--session-stdin` 注入；后者接收原始 token 或该 JSON。使用本地 `secret` CLI 在调用点读取并通过管道注入，不把会话、验证码写进命令参数、文档或文件。认证请求体优先 stdin，不能同时让会话和请求体占用 stdin。CLI 不保存会话。`auth me` 查询本人；`auth logout` 注销当前会话。
+推荐认证：在网页登录后创建个人访问令牌，通过 `DATA_COFFEE_TOKEN` 或 `--token-stdin` 注入。令牌格式为 `dcf_` 加 64 位小写十六进制字符，CLI 通过 `Authorization: Bearer` 发送。Agent 使用本地 `secret` CLI 在调用点读取，将输出管道接到 `node cli/dc-flow.mjs auth me --token-stdin`；具体读取参数以本机 `secret` 帮助为准。不要将明文令牌放入命令参数、日志或文件。CLI 不保存令牌；两个 token 来源同时提供、或 token 与会话同时提供时拒绝执行。`--token-stdin` 不能与 `--data -` 同用，动作请求体可用 `@文件`。
 
-成功输出为 stdout JSON；错误为 stderr JSON。退出码：0 成功，1 网络或 API 错误，2 参数错误，3 认证/权限错误，4 版本冲突。请求超时 30 秒，拒绝 HTTP 重定向。活动列表遵循服务端当前最多 200 条及草稿可见性规则；当前没有分页、删除活动、自动登录刷新或独立 Agent token。测试通过 mock HTTP 验证参数和错误通道，不发送真实邮件。
+邮箱登录保留作为备用：`auth request --data ...` 的 JSON 为 `{email}`，该命令会向目标服务请求真实验证码；`auth verify --data -` 接收 `{email,code,nickname}`。普通验证输出只含用户；显式 `--session-only` 输出 `{sessionToken}` 供管道捕获。会话仅经 `DATA_COFFEE_SESSION` 或 `--session-stdin` 注入；后者接收原始 token 或该 JSON。使用本地 `secret` CLI 在调用点读取并通过管道注入，不把会话、验证码写进命令参数、文档或文件。认证请求体优先 stdin，不能同时让会话和请求体占用 stdin。CLI 不保存会话。`auth me` 查询本人；`auth logout` 注销当前会话。
+
+成功输出为 stdout JSON；错误为 stderr JSON。退出码：0 成功，1 网络或 API 错误，2 参数错误，3 认证/权限错误，4 版本冲突。请求超时 30 秒，拒绝 HTTP 重定向。活动列表遵循服务端当前最多 200 条及草稿可见性规则；当前没有分页、删除活动、自动登录刷新。测试通过 mock HTTP 验证参数和错误通道，不发送真实邮件。
 
 ## 云端开发环境准备
 

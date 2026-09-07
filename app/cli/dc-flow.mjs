@@ -13,6 +13,8 @@ export const help = `Data Coffee CLI（Node.js 22+）
   auth verify --data ... --session-only   仅输出会话 JSON，供管道捕获
   auth me | auth logout
 选项：--base-url <URL>（或 DATA_COFFEE_BASE_URL，默认 http://localhost:8787）
+      DATA_COFFEE_TOKEN 或 --token-stdin 提供个人访问令牌（dcf_ + 64位小写十六进制）
+      token 通过 Authorization Bearer 发送；不能与会话认证同时提供。
       --session-stdin 从 stdin 读取会话（64位 token 或 {sessionToken} JSON）
       DATA_COFFEE_SESSION 环境变量提供会话；不接受命令行 token，不保存凭证。
       --help
@@ -31,7 +33,7 @@ export async function run(argv, io={}) {
     for(let i=0;i<argv.length;i++){
       const arg=argv[i];
       if(!arg.startsWith('--')){pos.push(arg);continue;}
-      if(['--session-stdin','--session-only'].includes(arg)){opts[arg]=true;continue;}
+      if(['--token-stdin','--session-stdin','--session-only'].includes(arg)){if(opts[arg])throw new CliError('选项重复');opts[arg]=true;continue;}
       if(!['--base-url','--data','--version','--key'].includes(arg))throw new CliError('未知选项');
       if(opts[arg]!==undefined||!argv[i+1]||argv[i+1].startsWith('--'))throw new CliError('选项缺少值或重复');
       opts[arg]=argv[++i];
@@ -50,7 +52,13 @@ export async function run(argv, io={}) {
     const base=new URL(opts['--base-url']??env.DATA_COFFEE_BASE_URL??'http://localhost:8787');
     if(base.username||base.password||base.search||base.hash||base.pathname!=='/'||!['https:','http:'].includes(base.protocol))throw new CliError('base-url 必须是无路径、凭证或查询参数的 HTTP(S) 地址');
     if(base.protocol==='http:'&&!['localhost','127.0.0.1','[::1]'].includes(base.hostname))throw new CliError('远程 API 必须使用 HTTPS');
-    if(opts['--session-stdin']&&opts['--data']==='-')throw new CliError('会话和请求体不能同时读取 stdin');
+    const tokenProvided=env.DATA_COFFEE_TOKEN!==undefined||opts['--token-stdin'];
+    const sessionProvided=env.DATA_COFFEE_SESSION!==undefined||opts['--session-stdin'];
+    if(tokenProvided&&sessionProvided)throw new CliError('token 和会话认证不能同时提供');
+    if(opts['--token-stdin']&&env.DATA_COFFEE_TOKEN!==undefined)throw new CliError('token 只能提供一个来源');
+    if((opts['--session-stdin']||opts['--token-stdin'])&&opts['--data']==='-')throw new CliError('凭证和请求体不能同时读取 stdin');
+    const token=opts['--token-stdin']?(await stdin()).trim():env.DATA_COFFEE_TOKEN;
+    if(tokenProvided&&(typeof token!=='string'||!/^dcf_[a-f0-9]{64}$/.test(token)))throw new CliError('token 格式无效');
     let session=env.DATA_COFFEE_SESSION;
     if(opts['--session-stdin']){const raw=(await stdin()).trim();try{session=JSON.parse(raw).sessionToken;}catch{session=raw;}}
     if(session&&!/^[a-f0-9]{64}$/.test(session))throw new CliError('会话格式无效');
@@ -62,6 +70,7 @@ export async function run(argv, io={}) {
     }
     if(['create','request','verify'].includes(command)&&!payload)throw new CliError('缺少 --data');
     const headers={'Accept':'application/json'};
+    if(token)headers.Authorization=`Bearer ${token}`;
     if(session)headers.Cookie=`dc_session=${session}`;
     if(group==='events'&&command==='action'){
       if(!/^\d+$/.test(opts['--version']??'')||!Number.isSafeInteger(Number(opts['--version'])))throw new CliError('action 必须提供非负整数 --version');

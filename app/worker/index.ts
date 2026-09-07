@@ -1,7 +1,7 @@
 import type {Env,User} from './types';
 import {DomainError,fail,textValue} from './engine';
 import {advance,deleteDraft,execute,insertActivity,project,tick} from './store';
-import {currentUser,handleAuth} from './auth';
+import {currentUser,handleAuth,handleTokens} from './auth';
 import {drainMail} from './mail';
 import {handleAI} from './ai';
 
@@ -27,7 +27,8 @@ export default {
         const site=request.headers.get('sec-fetch-site');if(site==='cross-site')fail('请求来源不允许',403);
         if(Number(request.headers.get('content-length')??0)>32000)fail('请求过大',413);
       }
-      const auth=await handleAuth(request,env);
+      if(request.headers.has('Authorization')) await currentUser(request,env);
+      const auth=await handleTokens(request,env) ?? await handleAuth(request,env);
       if(auth)res=auth;
       else if(url.pathname==='/api/health')res=json({ok:true,environment:env.APP_ENV});
       else {
