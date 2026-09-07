@@ -107,7 +107,7 @@ function renderDetail(e){
   const waitOpen=e.rules.waitlist&&Date.now()<e.rules.promotionDeadline;
   const slots=e.rules.timeSlots||[], selectedSlot=slots.find(s=>s.id===e.selectedSlotId);
   const prefForm=el('form',{class:'preference-form'},el('p',{class:'form-note'},`活动城市：${e.city}`));
-  if(slots.length)prefForm.append(el('fieldset',{class:'slot-options'},el('legend',{},'可以参加的时段（可多选）'),slots.map(s=>el('label',{class:'check'},el('input',{type:'checkbox',name:'availableSlotIds',value:s.id,checked:p?.availableSlotIds?.includes(s.id)||false}),`${date(s.startsAt)} — ${date(s.endsAt)}${s.id===e.selectedSlotId?' · 最终时段':''}`))));
+  if(slots.length)prefForm.append(registrationCalendar(slots,p?.availableSlotIds||[],e.selectedSlotId));
   else prefForm.append(el('p',{class:'form-note'},`活动时间：${date(e.rules.startsAt)} — ${date(e.rules.endsAt)}`));
   const transport=el('fieldset',{class:'transport-preferences'},el('legend',{},'交通偏好（可多选）'),[['public_transport','公共交通'],['car','开车']].map(([value,label])=>el('label',{class:'check'},el('input',{type:'checkbox',name:'transportPreferences',value,checked:p?.transportPreferences?.includes(value)||false}),label)));
   const message=field('报名留言（选填，最多 500 字）','registrationMessage','textarea',p?.registrationMessage||'',false);
@@ -168,6 +168,21 @@ function deleteDraftDialog(e){
  const content=el('div',{},el('h2',{},'删除草稿？'),el('p',{},'将删除「'+e.title+'」。删除后无法在页面恢复。'),btn('保留草稿',closeModal),btn('确认删除',async()=>{try{await api('/api/events/'+e.id,{version:e.version},'DELETE');closeModal();state.event=null;location.hash='';toast('草稿已删除');}catch(err){errorAt(content,err);}},'button danger'));modal(content);
 }
 function publishPreview(e){const f=el('form',{},el('h2',{},'发布前，最后看一眼'),el('div',{class:'preview'},el('h3',{},e.title),el('p',{},`${e.city} · ${e.rules.timeSlots?.length?'候选时段 '+e.rules.timeSlots.length+' 个':date(e.rules.startsAt)}`),(e.rules.timeSlots||[]).map(s=>el('p',{},`${date(s.startsAt)} — ${date(s.endsAt)}`)),el('p',{class:'prose'},e.description),el('p',{},`成行最低 ${e.rules.minPeople} 人，最多 ${e.rules.maxPeople} 人`),el('p',{},`征集截止：${date(e.rules.recruitmentDeadline)}`),el('p',{},`结束：${date(e.rules.endsAt)} · 报名截止：${date(e.rules.registrationDeadline)} · 递补截止：${date(e.rules.promotionDeadline)}`),el('p',{},`场地${e.rules.venueRequired?'必需':'非必需'} · 现场负责人 ${e.rules.minHosts}`),el('p',{},`${e.rules.waitlist?'允许候补':'不开放候补'} · ${e.rules.allowRoleOverlap?'允许角色兼任':'角色不可兼任'} · 补齐 ${e.rules.repairMinutes} 分钟`),el('p',{},`持续检查：${[['continuousVenue','场地'],['continuousTalks','分享'],['continuousCohosts','协办'],['continuousHosts','现场负责人']].filter(([k])=>e.rules[k]).map(([,v])=>v).join('、')||'无'} · 地址${e.rules.addressVisibility==='public'?'公开':'仅参与者可见'}`)),el('p',{class:'form-note'},'发布后，人数、截止时间与其他成行规则将锁定。活动创建者不会自动报名，也不会自动成为现场负责人。'),el('button',{type:'submit',class:'button orange'},'确认规则并发布'));f.onsubmit=async ev=>{ev.preventDefault();const b=f.querySelector('button[type=submit]');b.disabled=true;try{await command('publish');}catch(err){errorAt(f,err);}finally{b.disabled=false;}};modal(f);}
+function registrationCalendar(slots,selected,finalId){
+ const root=el('fieldset',{class:'slot-options registration-calendar'},el('legend',{},'点选可参加日期（可多选）'));
+ const groups=new Map();for(const slot of slots){const day=localParts(slot.startsAt).slice(0,10);if(!groups.has(day))groups.set(day,[]);groups.get(day).push(slot);}
+ const months=[...new Set([...groups.keys()].map(d=>d.slice(0,7)))].sort();
+ for(const month of months){const [year,m]=month.split('-').map(Number),offset=(new Date(Date.UTC(year,m-1,1)).getUTCDay()+6)%7,days=new Date(Date.UTC(year,m,0)).getUTCDate();
+ const grid=el('div',{class:'registration-calendar-grid'},...['一','二','三','四','五','六','日'].map(d=>el('span',{class:'calendar-weekday'},d)));
+ for(let i=0;i<offset;i++)grid.append(el('span'));
+ for(let n=1;n<=days;n++){const key=month+'-'+String(n).padStart(2,'0'),choices=groups.get(key);if(!choices){grid.append(el('span',{class:'registration-day-unavailable'},n));continue;}
+ const cell=el('div',{class:'registration-day'},el('strong',{},n));
+ for(const slot of choices){const input=el('input',{type:'checkbox',name:'availableSlotIds',value:slot.id,checked:selected.includes(slot.id),'aria-label':date(slot.startsAt)+' 至 '+date(slot.endsAt)});const start=localParts(slot.startsAt),end=localParts(slot.endsAt);const text=start.slice(11)+'–'+(start.slice(0,10)===end.slice(0,10)?'':end.slice(5,10)+' ')+end.slice(11);
+ cell.append(el('label',{},input,el('span',{},text+(slot.id===finalId?' · 已定':''))));}grid.append(cell);}
+ root.append(el('h3',{},year+' 年 '+m+' 月'),grid);
+ }
+ root.append(el('small',{class:'muted'},'蓝色为已选。时间均为荷兰当地时间。'));return root;
+}
 function localParts(ms){const p=Object.fromEntries(new Intl.DateTimeFormat('en-CA',{timeZone:'Europe/Amsterdam',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).formatToParts(ms).map(x=>[x.type,x.value]));return`${p.year}-${p.month}-${p.day}T${p.hour}:${p.minute}`;}
 function quarterPicker(input){
  const dateOnly=input.type==='datetime-local';
