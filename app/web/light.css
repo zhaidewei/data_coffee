@@ -25,3 +25,6 @@
 [data-theme=light] .field-error{color:#b3213b}
 [data-theme=light] .badge.draft{background:#ffe2e7;color:#a3213b;border-color:#eaa0ad}
 [data-theme=light] .badge.recruiting{background:#008a12;color:#fff;border-color:#00a51b}
+[data-theme=light]{--state-success:#087c2a;--state-running:#007b92;--state-waiting:#53657b;--state-repairing:#a95b00;--state-cancelled:#bd243c;--state-optional:#7850a1}
+[data-theme=light] .state-success{--state-bg:#e5f6e9}[data-theme=light] .state-running{--state-bg:#e2f5f9}[data-theme=light] .state-waiting{--state-bg:#edf1f6}[data-theme=light] .state-repairing{--state-bg:#fff0d9}[data-theme=light] .state-cancelled,[data-theme=light] .state-draft{--state-bg:#ffebee}[data-theme=light] .state-optional{--state-bg:#f1eafa}
+[data-theme=light] .dag-node[class*=state-],[data-theme=light] .dag-node[class*=state-]:hover,[data-theme=light] .dag-node[class*=state-][aria-pressed=true]{background:var(--state-bg);border-left-color:var(--state-color)}[data-theme=light] .dag-node[class*=state-] small{color:#42546b}[data-theme=light] .dag-node[class*=state-] .dag-task-id{color:var(--state-color)}

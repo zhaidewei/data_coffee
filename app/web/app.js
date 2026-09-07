@@ -1,3 +1,4 @@
+import {dagStatuses,dagStatusLabels} from './dag-status.js';
 import {attachTimeValidation} from './time-validation.js';
 import {renderCliDocs} from './cli-docs.js';
 import {mountMap} from './map.js';
@@ -163,8 +164,9 @@ function renderDetail(e){
   const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');svg.setAttribute('viewBox','0 0 1000 630');svg.setAttribute('preserveAspectRatio','none');svg.setAttribute('class','dag-links');svg.setAttribute('aria-hidden','true');
   const path=document.createElementNS(svg.namespaceURI,'path');path.setAttribute('d','M500 116 V146 H167 V180 M500 146 V180 M500 146 H833 V180 M167 276 V350 M500 276 V350 M833 276 V350 M167 446 V483 H500 V520 M500 446 V520 M833 446 V483 H500');svg.append(path);canvas.append(svg);
   const nodes=[...flow.querySelectorAll('.code-node')];
+  const nodeStates=dagStatuses({...e,conditions,applications});
   const taskLabels=['create_coffee','join','confirm_time','propose_venue','confirm_venue','apply_host','confirm_host','ready'];
-  nodes.forEach((box,i)=>{const button=el('button',{class:'dag-node '+(box.classList.contains('editable')?'dag-open':'dag-locked'),type:'button','aria-pressed':'false'},el('code',{class:'dag-task-id'},taskLabels[i]),el('strong',{},box.dataset.flowKey),el('small',{},box.querySelector('.node-status').textContent.replace('状态：','')));button.style.left=positions[i][0]+'%';button.style.top=positions[i][1]+'px';button.style.setProperty('--node-y',positions[i][1]);canvas.append(button);box._dagButton=button;});
+  nodes.forEach((box,i)=>{const button=el('button',{class:'dag-node state-'+nodeStates[i]+' '+(box.classList.contains('editable')?'dag-open':'dag-locked'),type:'button','aria-pressed':'false'},el('code',{class:'dag-task-id'},taskLabels[i]),el('strong',{},box.dataset.flowKey),el('small',{},dagStatusLabels[nodeStates[i]]+' · '+box.querySelector('.node-status').textContent.replace('状态：','')));button.setAttribute('aria-label',box.dataset.flowKey+' · '+dagStatusLabels[nodeStates[i]]);button.title=dagStatusLabels[nodeStates[i]];button.style.left=positions[i][0]+'%';button.style.top=positions[i][1]+'px';button.style.setProperty('--node-y',positions[i][1]);canvas.append(button);box._dagButton=button;});
   // Keep each form alive when switching nodes; never duplicate API action controls.
   const details=new Map(nodes.map(box=>[box,box.querySelector('.code-node-detail')]));
   const draft=e.status==='draft'&&e.isOwner;
