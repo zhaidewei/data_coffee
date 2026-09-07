@@ -5,3 +5,7 @@ dist/
 .env.local
 *.db
 .claude
+app/.wrangler/
+app/build/
+app/.dev.vars*
+app/coverage/
