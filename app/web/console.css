@@ -10,7 +10,7 @@ body{padding-left:60px;font-size:14px;background:var(--paper)}
 .button:hover{background:#293a54;transform:none}.button.dark,.button.orange,.site-header .button.dark{background:#2864d9;border-color:#3479ed;color:#fff}
 .button.dark:hover,.button.orange:hover{background:#3479ed}.button.danger{color:#ff8b99;border-color:#834754}.button.quiet:hover{background:#24334a}
 #app{max-width:1600px;padding:0 24px 40px}#app:has(.overview){padding:24px;min-height:calc(100vh - 64px);background:var(--paper)}
-.overview{max-width:none;color:var(--ink)}.overview-heading{margin-bottom:20px}.overview-heading h1{font-size:23px;letter-spacing:0;margin:4px 0}.overview .eyebrow{color:#8ea9cc;letter-spacing:1px}.overview .muted,.overview-heading p{color:var(--muted)}
+.overview{width:100%;max-width:1280px;margin-inline:auto;color:var(--ink)}.overview-heading{margin-bottom:20px}.overview-heading h1{font-size:23px;letter-spacing:0;margin:4px 0}.overview .eyebrow{color:#8ea9cc;letter-spacing:1px}.overview .muted,.overview-heading p{color:var(--muted)}
 .overview-total,.overview-controls,.overview-geography,.overview-event,.overview .empty{background:var(--paper);border:1px solid var(--line);border-radius:5px;box-shadow:none}
 .overview-total{color:#b9d6ff;padding:5px 10px;background:#203858}.overview-controls{padding:12px 14px;margin-bottom:18px}.overview-layout{gap:18px}.overview-geography{padding:14px}.overview h2{font-size:13px}
 .overview .filter{color:#b1bdcf;border-radius:4px}.overview .filter:hover{background:#25344b}.overview .filter.active{background:#294c78;border-color:#4774a7;color:#e6f0ff}.overview-timezone{color:#95a6bc}
