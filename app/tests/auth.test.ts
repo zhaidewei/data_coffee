@@ -113,3 +113,13 @@ describe('durable email outbox', () => {
     expect((await env.DB.prepare('SELECT last_error FROM outbox').first())!.last_error).toBe('delivery_uncertain_manual_review'); expect(fetcher).not.toHaveBeenCalled();
   });
 });
+
+it('邮箱验证无需昵称，首次可后设昵称，老用户保留原昵称',async()=>{
+ const code=await issue();const res=await handleAuth(req('/api/auth/verify',{email:'member@example.com',code}),env);
+ expect(res!.status).toBe(200);expect((await res!.clone().json() as any).user.nickname).toBe('');
+ const cookie=res!.headers.get('set-cookie')!.split(';')[0];
+ const saved=await handleAuth(req('/api/me',{nickname:'咖啡同学'},{cookie,method:'PATCH'}),env);expect(saved!.status).toBe(200);
+ await env.DB.prepare('DELETE FROM auth_rate_limits').run();
+ const again=await issue();const login=await handleAuth(req('/api/auth/verify',{email:'member@example.com',code:again}),env);
+ expect(login!.status).toBe(200);expect((await login!.json() as any).user.nickname).toBe('咖啡同学');
+});

@@ -143,8 +143,8 @@ export async function handleAuth(request: Request, env: Env): Promise<Response |
     rate(env, `verify:ip:${ipHash}`, 100, 15 * 60_000),
   ]);
   if (checks.includes(false)) return failure('操作过于频繁，请稍后重试。', 429);
-  const nickname = nicknameValue(data.nickname);
-  if (!nickname) return failure('请输入 1–40 个字符的昵称。');
+  const nickname = data.nickname === undefined ? '' : nicknameValue(data.nickname);
+  if (nickname === null) return failure('请输入 1–40 个字符的昵称。');
   if (typeof data.code !== 'string' || !/^\d{6}$/.test(data.code)) return invalidCode();
   const row = await env.DB.prepare('SELECT nonce FROM auth_codes WHERE email_hash=?').bind(emailHash).first<{ nonce: string }>();
   if (!row) return invalidCode();
