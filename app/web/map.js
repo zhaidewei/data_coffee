@@ -57,7 +57,7 @@ export async function mountMap(container,events,selectedCity,onSelect) {
   try {
     const L=await loadLeaflet();if(!alive())return dispose;
     const netherlandsBounds=L.latLngBounds([[50.72,3.25],[53.58,7.25]]);
-    map=L.map(canvas,{preferCanvas:true,scrollWheelZoom:false,minZoom:6,maxZoom:17,zoomControl:true,maxBounds:netherlandsBounds.pad(.08),maxBoundsViscosity:1}).setView([52.2,5.35],7);
+    map=L.map(canvas,{preferCanvas:true,zoomSnap:.25,scrollWheelZoom:false,minZoom:6,maxZoom:17,zoomControl:true,maxBounds:netherlandsBounds.pad(.08),maxBoundsViscosity:1}).setView([52.2,5.35],7);
     map.fitBounds(netherlandsBounds,{padding:[15,15]});
     const zoomLabels=()=>canvas.classList.toggle('map-close-up',map.getZoom()>=10);map.on('zoomend',zoomLabels);zoomLabels();
     L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,noWrap:true,attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'}).on('tileerror',()=>{issues.add('底图暂不可用；已加载的省界和城市仍可操作。');update();}).addTo(map);
