@@ -45,7 +45,7 @@ async function locate(city, signal) {
 export async function mountMap(container,events,selectedCity,onSelect) {
   active?.dispose();
   const controller=new AbortController();let map;let observer;
-  const dispose=()=>{controller.abort();observer?.disconnect();map?.remove();};
+  const dispose=()=>{if(controller.signal.aborted)return;controller.abort();observer?.disconnect();map?.remove();map=undefined;};
   active={dispose};
   container.replaceChildren();container.classList.add('real-map');
   const canvas=document.createElement('div');canvas.className='real-map-canvas';canvas.setAttribute('aria-label','荷兰活动地图，可缩放、拖动和选择城市');

@@ -8,12 +8,12 @@ export function attachTimeValidation(form, parse){
     for(const input of inputs){
       if(!input.value){errors.set(input,'请填写完整的日期和时间。');continue;}
       if(input.type==='time')continue;
-      try{values.set(input,parse(input.value,input.closest('.time-row').querySelector('select')?.value));}
+      try{values.set(input,parse(input.value,input.closest('.time-row').querySelector(':scope > select')?.value));}
       catch{errors.set(input,'这个荷兰当地时间不存在，请避开夏令时切换跳过的时段。');}
     }
     const starts=[];
     for(const row of form.querySelectorAll('.slot-editor-row')){
-      const [start,end]=row.querySelectorAll('input');
+      const [start,end]=row.querySelectorAll('input[type=datetime-local]');
       if(values.has(start))starts.push(values.get(start));
       if(values.has(start)&&values.has(end)&&values.get(end)<=values.get(start))errors.set(end,'结束时间必须晚于这一时段的开始时间。');
     }
