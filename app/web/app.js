@@ -173,8 +173,20 @@ function renderDetail(e){
   const editStage=i=>{renderEventForm(e);const targets=['[name=title]','.slot-editor','.slot-editor','[name=venueRequired]','[name=venueRequired]','[name=minHosts]','[name=minHosts]','[name=repairMinutes]'];const target=app.querySelector(targets[i]);target?.closest('fieldset, .panel')?.scrollIntoView({block:'start'});(target?.type==='radio'?target.closest('label'):target)?.focus({preventScroll:true});};
   if(draft)nodes.forEach((box,i)=>{box._dagButton.querySelector('small').textContent='草稿 · 点击编辑设置';details.set(box,el('div',{class:'code-node-detail'},el('p',{},'活动尚未发布。现在可以编辑这一阶段的设置，发布后才开放报名与提议。'),btn('编辑此阶段',()=>editStage(i),'button dark')));});
   nodes.forEach(box=>{box._dagButton.onclick=()=>{panel.querySelector('.code-node-detail')?.remove();canvas.querySelectorAll('.dag-node').forEach(n=>n.setAttribute('aria-pressed',String(n===box._dagButton)));state.dagSelection={eventId:e.id,stage:box.dataset.flowKey};panel.replaceChildren(el('small',{},'节点详情'),el('h2',{},box.dataset.flowKey),el('p',{class:'muted'},draft?'草稿 · 尚未开放参与':box.querySelector('.node-status').textContent),details.get(box));};});
+  const registrationAvailable=registrationOpen&&((slots.length&&!selectedSlot)||!full||waitOpen||['joined','waitlisted'].includes(joined));
+  const registrationButton=btn(['joined','waitlisted'].includes(joined)?'查看我的报名':'立即报名',()=>{
+    nodes[1]._dagButton.click();
+    const graph=canvas.closest('.dag-graph');
+    panel.style.scrollMarginTop=(getComputedStyle(graph).position==='sticky'?graph.getBoundingClientRect().height+12:16)+'px';
+    panel.tabIndex=-1;
+    panel.focus({preventScroll:true});
+    panel.scrollIntoView({block:'start',behavior:'instant'});
+  },'button registration-cta');
+  const hasRegistration=['joined','waitlisted'].includes(joined);
+  registrationButton.disabled=!registrationAvailable&&!hasRegistration;
+  if(registrationButton.disabled)registrationButton.textContent='报名已关闭';
   const selected=nodes.find(box=>state.dagSelection?.eventId===e.id&&box.dataset.flowKey===state.dagSelection.stage)||nodes[1]||nodes[0];selected._dagButton.click();
-  app.replaceChildren(el('a',{class:'back',href:'#'},'← 所有聚会'),el('header',{class:'detail-header code-header'},el('span',{class:'eyebrow'},'COFFEE DAG / GRAPH'),el('h1',{},e.title),el('p',{class:'muted publisher'},'发布人：'+(e.publisher?.nickname||'匿名成员')),badge(e.status)),draft?el('div',{class:'draft-toolbar'},el('span',{},'草稿预览 · 仅你可见'),btn('返回编辑',()=>renderEventForm(e)),btn('发布活动',()=>publishPreview(e),'button dark'),btn('删除草稿',()=>deleteDraftDialog(e),'button danger')):document.createDocumentFragment(),el('div',{class:'dag-workspace'},el('section',{class:'dag-graph'},el('div',{class:'dag-toolbar'},'Graph · 每个节点，都是相聚的一步 · 点击查看或参与'),canvas,el('p',{class:'muted'},'报名 / 提议 → 发起人确认 → READY · 截止后按规则成行或取消')),panel));
+  app.replaceChildren(el('a',{class:'back',href:'#'},'← 所有聚会'),el('header',{class:'detail-header code-header'},el('span',{class:'eyebrow'},'COFFEE DAG / GRAPH'),el('h1',{},e.title),el('p',{class:'muted publisher'},'发布人：'+(e.publisher?.nickname||'匿名成员')),el('div',{class:'detail-primary-actions'},badge(e.status),e.status!=='draft'?registrationButton:null)),draft?el('div',{class:'draft-toolbar'},el('span',{},'草稿预览 · 仅你可见'),btn('返回编辑',()=>renderEventForm(e)),btn('发布活动',()=>publishPreview(e),'button dark'),btn('删除草稿',()=>deleteDraftDialog(e),'button danger')):document.createDocumentFragment(),el('div',{class:'dag-workspace'},el('section',{class:'dag-graph'},el('div',{class:'dag-toolbar'},'Graph · 每个节点，都是相聚的一步 · 点击查看或参与'),canvas,el('p',{class:'muted'},'报名 / 提议 → 发起人确认 → READY · 截止后按规则成行或取消')),panel));
 }
 
 function deleteDraftDialog(e){
