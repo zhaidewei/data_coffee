@@ -1,6 +1,9 @@
+import {renderCliDocs} from './cli-docs.js';
+import {mountMap} from './map.js';
+import {monthRange,eventSlots,filterEvents} from './overview.js';
 const $ = (s, root = document) => root.querySelector(s);
 const app = $('#app');
-const state = {user:null, events:[], event:null, city:'全部', loading:0, proposal:null, aiGeneration:0, detailVisible:false, pendingEvent:null, polling:false, aiReviewPending:false};
+const state = {user:null, events:[], event:null, city:'全部',period:'all',from:monthRange('current').from,to:monthRange('current').to, loading:0, proposal:null, aiGeneration:0, detailVisible:false, pendingEvent:null, polling:false, aiReviewPending:false};
 const statusNames = {draft:'草稿',recruiting:'正在征集',confirmed:'已成行',repairing:'条件补齐中',cancelled:'已取消',completed:'已结束',pending:'待审核',approved:'已通过',rejected:'未通过',withdrawn:'已撤回',joined:'已报名',waitlisted:'候补中',left:'已退出'};
 const kinds = {cohost:'协办',host:'现场负责人',talk:'主题分享',venue:'场地',material:'物资',pledge:'赞助'};
 const actions = {join:'报名',leave:'退出报名',apply:'提交申请',withdraw:'撤回申请',publish:'发布活动',cancel:'取消活动',review:'审核申请',revoke:'撤销批准',describe:'更正介绍',edit:'编辑草稿'};
@@ -13,7 +16,7 @@ async function api(path, body, method){let response;try{response=await fetch(pat
 function date(ms,options={}){return new Intl.DateTimeFormat('zh-CN',{timeZone:'Europe/Amsterdam',month:'long',day:'numeric',hour:'2-digit',minute:'2-digit',...options}).format(new Date(ms));}
 function countdown(ms){let sec=Math.floor((ms-Date.now())/1000);if(sec<=0)return'已到截止时间';const d=Math.floor(sec/86400);sec%=86400;return`${d?d+' 天 ':''}${String(Math.floor(sec/3600)).padStart(2,'0')} : ${String(Math.floor(sec%3600/60)).padStart(2,'0')} : ${String(sec%60).padStart(2,'0')}`;}
 setInterval(()=>document.querySelectorAll('[data-countdown]').forEach(n=>n.textContent=countdown(Number(n.dataset.countdown))),1000);
-function updateAccount(){$('#account-button').textContent=state.user?state.user.nickname:'登录 / 注册';}
+function updateAccount(){$('#account-button .account-label').textContent=state.user?'账户':'登录';$('#account-button').title=state.user?state.user.nickname:'登录 / 注册';}
 function modal(content){$('#modal-content').replaceChildren(content);$('#modal').showModal();}
 function closeModal(){$('#modal').close();}
 $('.modal-close').onclick=closeModal;
@@ -23,159 +26,34 @@ function check(label,name,value=false){return el('label',{class:'check'},el('inp
 async function login(){const form=el('form',{},el('span',{class:'eyebrow'},'WELCOME TO THE TABLE'),el('h2',{},'留个名字，一起喝咖啡'),el('p',{class:'muted'},'使用邮箱验证码登录。昵称由你选择；报名只代表你本人。'),field('邮箱','email','email'),field('昵称','nickname','text',''));const code=field('验证码','code','text');code.hidden=true;code.querySelector('input').required=false;const submit=el('button',{class:'button dark',type:'submit'},'发送验证码');form.append(code,submit);let sent=false;form.onsubmit=async e=>{e.preventDefault();submit.disabled=true;try{const v=Object.fromEntries(new FormData(form));if(!sent){const r=await api('/api/auth/request',{email:v.email});sent=true;code.hidden=false;code.querySelector('input').required=true;form.elements.email.readOnly=true;submit.textContent='验证并登录';if(r.developmentCode)form.append(el('p',{class:'form-note'},`开发环境验证码：${r.developmentCode}`));else toast('验证码已发送，请检查邮箱。');code.querySelector('input').focus();}else{const r=await api('/api/auth/verify',v);state.user=r.user;updateAccount();closeModal();await route();toast('登录成功，欢迎加入。');}}catch(err){errorAt(form,err);}finally{submit.disabled=false;}};modal(form);}
 function requireUser(){if(state.user)return true;login();return false;}
 function account(){if(!state.user)return login();const f=el('form',{},el('h2',{},'我的社区名片'),el('p',{class:'muted'},state.user.email),field('昵称','nickname','text',state.user.nickname),check('公开显示我的昵称（关闭后，活动管理者仍可查看）','publicNickname',state.user.publicNickname),el('button',{class:'button dark',type:'submit'},'保存设置'),btn('退出登录',async()=>{try{await api('/api/auth/logout',{});state.user=null;updateAccount();closeModal();route();}catch(e){errorAt(f,e);}},'button quiet'));f.onsubmit=async e=>{e.preventDefault();try{const r=await api('/api/me',{nickname:f.elements.nickname.value,publicNickname:f.elements.publicNickname.checked},'PATCH');state.user=r.user;updateAccount();closeModal();toast('设置已保存');route();}catch(err){errorAt(f,err);}};modal(f);}
-$('#account-button').onclick=account;
+$('#account-button').onclick=()=>{
+  const old=$('#account-menu');if(old){old.remove();return;}
+  const close=()=>{$('#account-menu')?.remove();$('#account-button').setAttribute('aria-expanded','false');};
+  const themeChoices=el('div',{class:'appearance-options'},...['light','dark','system'].map((value,i)=>{const b=btn(['☀ 浅色模式','☾ 深色模式','▣ 跟随系统'][i],()=>{window.coffeeTheme.set(value);themeChoices.querySelectorAll('button').forEach(x=>x.setAttribute('aria-pressed',String(x===b)));},'account-menu-item');b.setAttribute('aria-pressed',String(window.coffeeTheme.get()===value));return b;}));
+  const menu=el('aside',{id:'account-menu',class:'account-menu','aria-label':'账户菜单'},el('div',{class:'account-menu-heading'},el('small',{},state.user?'Signed in as':'Data Coffee'),el('strong',{},state.user?.nickname||'尚未登录')),btn(state.user?'♙ 个人资料':'♙ 登录 / 注册',()=>{close();account();},'account-menu-item'),el('details',{},el('summary',{},'☼ 外观'),themeChoices));
+  if(state.user)menu.append(btn('↪ 退出登录',async()=>{try{await api('/api/auth/logout',{});state.user=null;updateAccount();close();route();}catch(e){errorAt(menu,e);}},'account-menu-item'));
+  document.body.append(menu);$('#account-button').setAttribute('aria-expanded','true');
+};
+document.addEventListener('click',e=>{if(!e.target.closest('#account-menu, #account-button')){$('#account-menu')?.remove();$('#account-button').setAttribute('aria-expanded','false');}});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'&&$('#account-menu')){$('#account-menu').remove();$('#account-button').setAttribute('aria-expanded','false');$('#account-button').focus();}});
 $('#create-button').onclick=()=>{if(requireUser())location.hash='new';};
 function hero(){return el('section',{class:'hero'},el('div',{},el('span',{class:'eyebrow'},'GOOD COFFEE. REAL CONNECTIONS.'),el('h1',{},'数据之外，',el('br'),'还有一杯 ',el('em',{},'Coffee.')),el('p',{},'把屏幕里的同行，变成咖啡桌旁的朋友。\n在荷兰，和做数据、做 AI 的人聊一个真实问题。'),el('div',{class:'hero-actions'},el('a',{href:'#gatherings',class:'button dark',onclick:e=>{e.preventDefault();$('#gatherings')?.scrollIntoView({behavior:'smooth'});}},'找到下一场聚会 ↗'),el('span',{class:'muted'},'小规模 · 有话聊 · 一起办'))),el('div',{class:'hero-art','aria-label':'Data Coffee 咖啡杯插画',role:'img'},el('span',{class:'steam','aria-hidden':'true'},'∿ ∿'),el('span',{class:'orbit','aria-hidden':'true'},'✳'),el('div',{class:'cup','aria-hidden':'true'},'dc.'),el('span',{class:'art-note'},'BREW IDEAS, TOGETHER.')));}
-function eventCard(e){const count=e.counts?.joined||0;return el('a',{class:'event-card',href:`#event/${e.id}`},el('div',{class:'card-art'},el('div',{class:'date-block'},date(e.rules.startsAt,{month:'short',day:undefined,hour:undefined,minute:undefined}),el('strong',{},date(e.rules.startsAt,{month:undefined,day:'2-digit',hour:undefined,minute:undefined}))),el('span',{class:'card-symbol','aria-hidden':'true'},'{ ☕ }'),badge(e.status)),el('div',{class:'card-body'},el('div',{class:'card-city'},`↗ ${e.city}  ·  荷兰当地时间 ${date(e.rules.startsAt,{month:undefined,day:undefined})}`),el('h3',{},e.title),el('p',{},e.description),el('div',{class:'mini-progress'},el('span',{style:`width:${Math.min(100,count/e.rules.minPeople*100)}%`})),el('div',{class:'card-bottom'},el('span',{},`${count} 人报名 · ${e.rules.minPeople} 人起成行`),el('span',{},'看看聚会 ↗'))));}
-function renderHome(){state.detailVisible=false;state.pendingEvent=null;app.replaceChildren(el('section',{id:'gatherings'}));const section=$('#gatherings');const cities=['全部',...new Set(state.events.map(e=>e.city))];section.append(el('div',{class:'section-heading'},el('div',{},el('h2',{},'下一杯，在哪里？'),el('p',{},'看看附近正在发生什么，也可以发起属于你的那一场。')),el('div',{class:'filters','aria-label':'按城市筛选'},cities.map(c=>btn(c,()=>{state.city=c;renderHome();},`filter ${state.city===c?'active':''}`)))));const filtered=state.events.filter(e=>state.city==='全部'||e.city===state.city);section.append(el('div',{class:'grid'},filtered.length?filtered.map(eventCard):el('div',{class:'empty'},el('span',{class:'eyebrow'},'A TABLE WAITING FOR YOU'),el('h3',{},'第一杯咖啡，等你来约'),el('p',{},'这里还没有公开聚会。选一个话题，邀请同频的人坐下来聊聊。'),el('p',{class:'muted'},'点击右上角「发起聚会」创建活动。'))));}
+function overviewRange(){return state.period==='all'?null:state.period==='custom'?{from:state.from,to:state.to}:monthRange(state.period);}
+function overviewCard(e){const slots=eventSlots(e),first=slots[0];return el('a',{class:'overview-event',href:`#event/${e.id}`},el('div',{class:'overview-event-heading'},el('h3',{},e.title),badge(e.status)),el('p',{class:'overview-event-meta'},e.city+' · '+(e.selectedSlotId?'最终时段':slots.length>1?slots.length+' 个候选时段':'活动时间')),el('div',{class:'overview-slot-list'},slots.map(s=>el('span',{},date(s.startsAt)+' — '+date(s.endsAt)))),el('p',{class:'overview-description'},e.description),el('div',{class:'overview-event-bottom'},el('span',{},`${e.counts?.joined||0} 人报名 · ${e.rules.minPeople} 人起成行`),el('span',{},'查看活动流程 →')));}
+function overviewMap(events){const wrapper=el('div',{class:'overview-map-real'});requestAnimationFrame(()=>{if(wrapper.isConnected)mountMap(wrapper,events,state.city,city=>{state.city=city;renderHome();});});return wrapper;}
+function renderHome(){state.detailVisible=false;state.pendingEvent=null;const range=overviewRange(),invalid=range&&(!range.from||!range.to||range.from>range.to),timeEvents=invalid?[]:filterEvents(state.events,'全部',range),filtered=invalid?[]:filterEvents(state.events,state.city,range);const heading=el('header',{class:'overview-heading'},el('div',{},el('span',{class:'eyebrow'},'DATA COFFEE / 活动总览'),el('h1',{},'Coffee DAGs'),el('p',{class:'muted'},'把相聚调度起来 · 按城市和时间找到你的下一杯咖啡。')),el('span',{class:'overview-total'},filtered.length+' 场活动'));
+const periods=el('div',{class:'overview-periods','aria-label':'按时间筛选'},[['all','全部时间'],['current','本月'],['next','下月'],['custom','自选日期']].map(([key,label])=>btn(label,()=>{state.period=key;renderHome();},'filter'+(state.period===key?' active':''))));periods.querySelectorAll('button').forEach((b,i)=>b.setAttribute('aria-pressed',String(['all','current','next','custom'][i]===state.period)));
+const controls=el('section',{class:'overview-controls'},periods,el('span',{class:'overview-timezone'},'Europe/Amsterdam · 荷兰当地时间'));if(state.period==='custom'){const from=el('input',{type:'date',value:state.from,'aria-label':'开始日期'}),to=el('input',{type:'date',value:state.to,'aria-label':'结束日期'});from.onchange=()=>{state.from=from.value;renderHome();};to.onchange=()=>{state.to=to.value;renderHome();};controls.append(el('div',{class:'overview-dates'},el('label',{},'从 ',from),el('label',{},'至 ',to)),invalid?el('p',{class:'error-box',role:'alert'},'请选择完整日期范围，结束日期须不早于开始日期。'):null);}
+const cities=['全部','Amsterdam','Rotterdam','Utrecht','Den Haag',...new Set(state.events.map(e=>e.city).filter(c=>!['Amsterdam','Rotterdam','Utrecht','Den Haag'].includes(c)))];const cityButtons=el('div',{class:'overview-cities','aria-label':'按城市筛选'},cities.map(city=>{const count=city==='全部'?timeEvents.length:timeEvents.filter(e=>e.city===city).length;return el('button',{type:'button',class:'overview-city'+(state.city===city?' active':''),'aria-pressed':String(state.city===city),onclick:()=>{state.city=city;renderHome();}},el('span',{},city),el('span',{class:'city-count'},count));}));
+const geography=el('section',{class:'overview-geography'},el('h2',{},'城市分布'),overviewMap(timeEvents),cityButtons);const results=el('section',{class:'overview-results','aria-label':'筛选结果','aria-live':'polite'},el('div',{class:'overview-results-heading'},el('h2',{},state.city==='全部'?'所有城市':state.city),el('span',{class:'muted'},filtered.length+' 场')),filtered.length?filtered.map(overviewCard):el('div',{class:'empty'},el('h3',{},invalid?'先选好日期':'No coffee runs found.'),el('p',{},invalid?'补全日期后即可查看结果。':'这个范围还没有咖啡被调度。试试其他城市或时间，或发起一场。'),btn('重置筛选',()=>{state.city='全部';state.period='all';renderHome();})));
+app.replaceChildren(el('div',{id:'gatherings',class:'overview'},heading,controls,el('div',{class:'overview-layout'},geography,results)));}
+
 async function command(action,extra={}){if(!requireUser())return;const id=state.event.id;const r=await api(`/api/events/${id}/actions`,{action,version:state.event.version,...extra});closeModal();toast('操作已保存');if(state.event?.id===id)await loadEvent(id);return r;}
 function run(action,extra={},node){return command(action,extra).catch(e=>node?errorAt(node,e):toast(e.message));}
 function confirmation(title,message,action,extra={},reason=false){const f=el('form',{},el('h2',{},title),el('p',{},message));if(reason)f.append(field('原因（将记入活动记录）','reason','textarea'));const b=el('button',{type:'submit',class:'button dark'},'确认');f.append(b);f.onsubmit=async e=>{e.preventDefault();b.disabled=true;try{await command(action,{...extra,...(reason?{reason:f.elements.reason.value}:{})});}catch(err){errorAt(f,err);}finally{b.disabled=false;}};modal(f);}
 function conditionNode(c){return el('div',{class:`condition ${c.satisfied?'ok':''}`},el('div',{class:'condition-top'},el('span',{},c.label),el('span',{},c.satisfied?'✓ 已满足':'待补齐')),el('strong',{},`${c.current} / ${c.required}`),el('div',{class:'progress-track'},el('span',{style:`width:${c.required?Math.min(100,c.current/c.required*100):100}%`})),el('span',{class:'muted'},c.continuous?'成行后仍需持续满足':'成行时检查'));}
 function applyForm(kind){if(!requireUser())return;const f=el('form',{},el('h2',{},`申请${kinds[kind]}`),field('标题','title','text'),field('具体说明','detail','textarea'));if(kind==='venue')f.append(field('可容纳人数','capacity','number'),field('详细地址','address','text'),el('p',{class:'muted'},state.event.rules.addressVisibility==='participants'?'地址仅按活动规则向参与者展示。':'此活动将公开场地地址。'));if(kind==='talk')f.append(field('预计时长（分钟）','duration','number',20));if(kind==='pledge')f.append(field('赞助金额（欧元）','amount','number'));const b=el('button',{class:'button dark',type:'submit'},'提交申请');f.append(el('p',{class:'form-note'},'申请通过后才计入条件。申请只代表你本人，可以在活动中查看处理结果或撤回。'),b);f.onsubmit=async e=>{e.preventDefault();b.disabled=true;const v=Object.fromEntries(new FormData(f));for(const k of ['capacity','amount','duration'])if(k in v)v[k]=Number(v[k]);try{await command('apply',{kind,...v});}catch(err){errorAt(f,err);}finally{b.disabled=false;}};modal(f);}
 function applicationNode(a,e,reviewControls=true,ownControls=true){const own=(e.myApplications||[]).some(x=>x.id===a.id);const mutable=!['cancelled','completed'].includes(e.status)&&Date.now()<e.rules.startsAt;const canReview=reviewControls&&mutable&&(['cohost','venue','host'].includes(a.kind)?e.isOwner:e.canManage);return el('div',{class:'application'},el('h3',{},`${kinds[a.kind]||a.kind} · ${a.title} `,badge(a.status)),el('p',{},a.detail),a.capacity?el('p',{},`容量：${a.capacity} 人`):null,a.address?el('p',{},`地址：${a.address}`):null,a.duration?el('p',{},`分享时长：${a.duration} 分钟`):null,a.amount?el('p',{},`赞助：€${a.amount}`):null,a.reason?el('p',{},`处理说明：${a.reason}`):null,el('div',{class:'inline-actions'},ownControls&&mutable&&own&&['pending','approved'].includes(a.status)?btn('撤回 / 退出',()=>confirmation('撤回这项申请？','撤回已通过的申请可能影响成行条件。','withdraw',{applicationId:a.id}),'button quiet'):null,canReview&&a.status==='pending'?btn('通过',()=>confirmation('通过申请？',`批准「${a.title}」，系统将重新检查成行条件。`,'review',{applicationId:a.id,approved:true})):null,canReview&&a.status==='pending'?btn('拒绝',()=>confirmation('拒绝申请','请向申请人说明原因。','review',{applicationId:a.id,approved:false},true),'button quiet'):null,mutable&&e.isOwner&&a.kind==='cohost'&&a.status==='approved'?btn('撤销协办资格',()=>confirmation('撤销批准','撤销后系统将重新检查活动条件。','revoke',{applicationId:a.id},true),'button danger'):null));}
-function renderDetailLegacy(e){
-  state.renderedPhase=eventTimePhase(e);state.detailVisible=true;state.pendingEvent=null;
-  const p=e.myParticipation,joined=typeof p==='string'?p:p?.status;
-  const active=['recruiting','confirmed','repairing'].includes(e.status),beforeStart=Date.now()<e.rules.startsAt;
-  const cs=e.conditions||[],applications=e.applications||[];
-  const timeline=el('div',{class:'gathering-flow','aria-label':'从主题到举办的活动流程'});
-  const stage=(number,title,current=false,extra='')=>{const n=el('section',{class:'journey-node '+extra+(current?' current':''),...(current?{'aria-current':'step'}:{})},el('div',{class:'journey-heading'},el('span',{class:'journey-number','aria-hidden':'true'},number),el('h2',{},title),current?el('span',{class:'journey-current'},'当前阶段'):null));timeline.append(n);return n;};
-  const conditionAt=(node,keys)=>{const found=cs.filter(c=>keys.includes(c.key));if(found.length)node.append(el('div',{class:'conditions'},found.map(conditionNode)));};
-  const contributions=(node,ks)=>{if(active&&beforeStart)node.append(el('div',{class:'inline-actions'},ks.map(k=>btn('＋ 申请'+kinds[k],()=>applyForm(k)))));const found=applications.filter(a=>ks.includes(a.kind));if(found.length)node.append(found.map(a=>applicationNode(a,e)));else node.append(el('p',{class:'muted'},state.user?'尚无申请，可以从这里提供帮助。':'尚无公开申请；登录后可申请并查看进度。'));};
-  const topic=stage('01','这次，我们聊什么',e.status==='draft');
-  topic.append(el('div',{class:'prose'},e.description||'发起人尚未填写介绍。'));
-  if(e.isOwner&&!['cancelled','completed'].includes(e.status)){
-    const edits=el('div',{class:'inline-actions'});
-    if(e.status==='draft')edits.append(btn('编辑草稿',()=>renderEventForm(e)),btn('预览并发布',()=>publishPreview(e),'button dark'));
-    else if(beforeStart)edits.append(btn('更正活动介绍',()=>{const f=el('form',{},el('h2',{},'更正活动介绍'),el('p',{class:'muted'},'活动规则已锁定。介绍更正不会改变已公布的规则。'),field('介绍','description','textarea',e.description),el('button',{class:'button dark',type:'submit'},'保存更正'));f.onsubmit=async ev=>{ev.preventDefault();try{await command('describe',{description:f.elements.description.value});}catch(err){errorAt(f,err);}};modal(f);}));
-    topic.append(edits);
-  }
-  const place=stage('02','约好时间与地点'+(e.rules.venueRequired?'':' · 场地可选'));
-  place.append(el('p',{class:'journey-lead'},date(e.rules.startsAt)+' — '+date(e.rules.endsAt)),el('p',{class:'muted'},'↗ '+e.city+' · Europe/Amsterdam · 荷兰当地时间'),el('p',{class:'muted'},'场地地址'+(e.rules.addressVisibility==='public'?'公开展示。':'仅向有权限的参与者展示。')));
-  conditionAt(place,['venue']);contributions(place,['venue']);
-  place.append(el('p',{class:'muted'},'报名与资源征集同步进行，可以直接在下一节点报名。'));
-  const join=stage('03','留一个位置给自己',e.status==='recruiting');
-  join.append(el('p',{class:'journey-lead'},(e.counts?.joined||0)+' 人报名 · '+(e.counts?.waitlisted||0)+' 人候补'),el('p',{class:'muted'},'最低 '+e.rules.minPeople+' 人，最多 '+e.rules.maxPeople+' 人；'+(e.rules.waitlist?'满员后进入候补，按报名顺序递补。':'不开放候补。')+'仅限本人报名。'),el('p',{class:'muted'},'报名截止：'+date(e.rules.registrationDeadline)));
-  conditionAt(join,['people']);
-  if(joined&&joined!=='left')join.append(el('p',{class:'form-note'},'我的状态：'+statusNames[joined]+(joined==='waitlisted'&&p?.position?' · 候补第 '+p.position+' 位':'')));
-  if(active&&beforeStart){
-    const repair=(e.repairs||[]).find(r=>r.key==='people');
-    const deadline=repair?.deadline||(e.status==='recruiting'?e.rules.recruitmentDeadline:e.rules.registrationDeadline);
-    join.append(el('p',{class:'muted'},repair?'人数补齐剩余时间':e.status==='recruiting'?'距离征集截止':'距离报名截止'),el('div',{class:'countdown','data-countdown':deadline},countdown(deadline)));
-    if(['joined','waitlisted'].includes(joined))join.append(btn(joined==='waitlisted'?'退出候补':'退出报名',()=>confirmation('退出这场聚会？','你的席位将按规则释放；退出可能影响成行人数。','leave'),'button quiet'));
-    else{
-      const full=(e.counts?.joined||0)>=e.rules.maxPeople;
-      const open=Date.now()<e.rules.registrationDeadline||!!repair;
-      const waitingAllowed=e.rules.waitlist&&Date.now()<e.rules.promotionDeadline;
-      if(open&&(!full||waitingAllowed))join.append(btn(full?'加入候补':'我要参加 ↗',()=>confirmation('确认本人报名',e.title+' · '+date(e.rules.startsAt)+'。请确认你可以到场；满员时将按规则处理候补。','join'),'button orange'));
-      else join.append(el('p',{class:'form-note'},!open?'报名已截止。':e.rules.waitlist?'名额已满，候补已截止。':'名额已满，本场不开放候补。'));
-    }
-  }else{join.append(el('p',{class:'muted'},active?'活动已开始，报名已关闭。':'当前状态不开放报名。'));if(active&&joined==='waitlisted')join.append(btn('退出候补',()=>confirmation('退出候补？','活动已经开始，你仍可退出候补名单。','leave'),'button quiet'));}
-
-  const people=(e.participants||[]).filter(x=>x.status!=='left');
-  join.append(el('details',{id:'detail-participants',class:'node-details'},el('summary',{},'谁会坐在这张桌旁 · 查看名单'),people.length?el('div',{class:'participant-list'},people.map(x=>el('span',{class:'person'},(x.nickname||'匿名参与者')+(x.isMe?'（我）':'')+' · '+(statusNames[x.status]||x.status)))):el('p',{class:'muted'},'还没有人入座，期待你的加入。')),el('div',{class:'inline-actions'},btn('问问活动助手 ✳',()=>openAI(),'button')));
-  const resource=stage('04','一起凑齐分享、角色与资源');
-  resource.append(el('p',{class:'muted'},'申请通过后才计入条件。审核与撤回都在对应申请旁完成。'));
-  const roles=el('div',{class:'contribution-group'},el('h3',{},'有人张罗，有人照应'+(!e.rules.minHosts&&!e.rules.minCohosts?' · 可选':'')),el('p',{class:'muted'},e.rules.allowRoleOverlap?'允许同一人兼任角色。':'现场负责人与协办等角色按独立人数核验。'));conditionAt(roles,['cohosts','hosts','roles']);contributions(roles,['cohost','host']);
-  const talks=el('div',{class:'contribution-group'},el('h3',{},'带一段分享来'+(!e.rules.minTalks?' · 可选':'')));conditionAt(talks,['talks']);contributions(talks,['talk']);
-  const supplies=el('details',{id:'detail-supplies',class:'node-details'},el('summary',{},'物资与赞助 · 可选'));contributions(supplies,['material','pledge']);resource.append(roles,talks,supplies);
-  const gate=stage('05','征集截止，决定是否成行',false,'decision-stage');
-  gate.append(el('p',{class:'journey-lead'},date(e.rules.recruitmentDeadline)),el('div',{class:'journey-question'},'最低人数与全部成行条件都满足？'),el('div',{class:'journey-branches'},el('div',{class:'journey-branch positive'},el('span',{class:'branch-label'},'是 ↓'),el('strong',{},'确认成团'),el('p',{},'沿主线继续准备聚会')),el('div',{class:'journey-branch negative'},el('span',{class:'branch-label'},'否 → 终止'),el('strong',{},'取消活动'),el('p',{},'记录原因，并通知参与者'))));
-  if(!cs.length)gate.append(el('p',{class:'muted'},'暂无条件评估记录。'));
-  const care=stage('06','成团后，继续照应这张桌',active&&e.status!=='recruiting'&&beforeStart);
-  care.append(el('p',{class:'muted'},'有人退出或持续条件变化时，系统重新检查。'),el('div',{class:'journey-inline-step'},'有可递补的候补 → 按报名顺序递补'),el('p',{class:'muted'},'递补截止：'+date(e.rules.promotionDeadline)+'。'+(e.rules.waitlist?'仅在递补截止前、活动开始前递补。':'此活动不开放候补。')),el('div',{class:'journey-question'},'递补后，人数或持续条件仍不足？'),el('div',{class:'journey-branches'},el('div',{class:'journey-branch positive'},el('span',{class:'branch-label'},'否 ↓'),el('strong',{},'活动继续')),el('div',{class:'journey-branch warning'},el('span',{class:'branch-label'},'是 ↓'),el('strong',{},'进入补齐'),el('p',{},'补齐窗口 '+e.rules.repairMinutes+' 分钟，最晚到活动开始。'))));
-  for(const r of e.repairs||[])care.append(el('div',{class:'repair'},r.label+' · 补齐截止 '+date(r.deadline),el('div',{'data-countdown':r.deadline},countdown(r.deadline))));
-  care.append(el('div',{class:'repair-decision'},el('p',{class:'muted'},'进入补齐后，以实际倒计时为准'),el('div',{class:'journey-question'},'截止前，全部待补条件已满足？'),el('div',{class:'journey-branches'},el('div',{class:'journey-branch positive'},el('span',{class:'branch-label'},'是 ↓'),el('strong',{},'恢复成行')),el('div',{class:'journey-branch negative'},el('span',{class:'branch-label'},'到期仍不足 → 终止'),el('strong',{},'取消活动')))));
-  const finish=stage('07',e.status==='cancelled'?'活动已取消':e.status==='completed'?'相聚结束，留下记录':'线下相聚',e.status==='cancelled'||e.status==='completed'||active&&!beforeStart,'finish-stage');
-  finish.append(el('p',{class:'journey-lead'},date(e.rules.startsAt)+' — '+date(e.rules.endsAt)),e.reason?el('p',{class:'error-box'},e.reason):el('p',{class:'muted'},'按约定时间相聚，活动结束后保留状态与评估记录。'));
-  const audit=el('details',{id:'detail-audit',class:'node-details'},el('summary',{},'查看状态与评估记录'),el('p',{class:'muted'},'当前版本 v'+e.version),(e.receipts||[]).slice().reverse().map(r=>el('div',{class:'receipt'},el('strong',{},date(r.at)+' · '+r.kind),el('p',{},r.reason),r.descriptionChange?el('details',{id:'detail-description-'+r.at+'-'+r.kind,class:'description-history'},el('summary',{},'查看介绍更正前后'),el('h3',{},'更正前'),el('div',{class:'prose'},r.descriptionChange.before||'（空）'),el('h3',{},'更正后'),el('div',{class:'prose'},r.descriptionChange.after||'（空）')):null,el('p',{class:'muted'},(r.conditions||[]).map(c=>c.label+' '+c.current+'/'+c.required).join(' · ')))));
-  finish.append(audit);
-  if(e.isOwner&&!['cancelled','completed'].includes(e.status))finish.append(el('details',{id:'detail-cancel',class:'node-details'},el('summary',{},'提前终止活动'),el('p',{class:'muted'},'取消会通知参与者，并保留取消原因。'),btn('取消活动',()=>confirmation('取消这场活动','此操作会通知参与者并记录取消原因。','cancel',{},true),'button danger')));
-  app.replaceChildren(el('a',{class:'back',href:'#'},'← 所有聚会'),el('header',{class:'detail-header unified-header'},el('span',{class:'eyebrow'},'一场聚会，一起凑成'),el('h1',{},e.title),badge(e.status)),timeline);
-}
-function renderDetailPrevious(e){
-  state.renderedPhase=eventTimePhase(e);state.detailVisible=true;state.pendingEvent=null;
-  const p=e.myParticipation,joined=typeof p==='string'?p:p?.status;
-  const active=['recruiting','confirmed','repairing'].includes(e.status),beforeStart=Date.now()<e.rules.startsAt;
-  const applications=e.applications||[],conditions=e.conditions||[],people=(e.participants||[]).filter(x=>x.status!=='left');
-  const flow=el('div',{class:'code-flow','aria-label':'活动规则与参与流程'});
-  const arrow=()=>el('span',{class:'code-arrow','aria-hidden':'true'});
-  const actionsFor=(kindsList)=>applications.filter(a=>kindsList.includes(a.kind));
-  const node=(purpose,status,open,buttonLabel,detail,current=false)=>{
-    const trigger=el('button',{class:'button flow-trigger',type:'button','aria-expanded':'false'},buttonLabel);
-    const box=el('section',{class:`code-node ${open?'editable':'locked'}${current?' current':''}`,'data-flow-key':purpose,'aria-current':current?'step':undefined},
-      el('div',{class:'code-node-core'},el('div',{},el('p',{class:'node-purpose'},`目的：${purpose}`),el('p',{class:'node-status'},'状态：',el('strong',{},status))),trigger),
-      el('div',{class:'code-node-detail'},detail));
-    const syncExpanded=()=>trigger.setAttribute('aria-expanded',String(box.classList.contains('pinned')||box.classList.contains('preview')));
-    trigger.onpointerenter=ev=>{if(ev.pointerType==='mouse'){box.classList.add('preview');syncExpanded();}};
-    box.onpointerleave=()=>{box.classList.remove('preview');syncExpanded();};
-    trigger.onfocus=()=>{box.classList.add('preview');syncExpanded();};
-    box.onfocusout=ev=>{if(!box.contains(ev.relatedTarget)){box.classList.remove('preview');syncExpanded();}};
-    trigger.onclick=()=>{box.classList.remove('preview');box.classList.toggle('pinned');syncExpanded();};
-    box.onkeydown=ev=>{if(ev.key==='Escape'){box.classList.remove('preview','pinned');syncExpanded();trigger.focus();box.classList.remove('preview');syncExpanded();}};
-    flow.append(box);return box;
-  };
-  const contributionDetail=(kindsList)=>el('div',{},active&&beforeStart?el('div',{class:'inline-actions'},kindsList.map(k=>btn(`＋ 申请${kinds[k]}`,()=>applyForm(k)))):null,
-    actionsFor(kindsList).length?actionsFor(kindsList).map(a=>applicationNode(a,e)):el('p',{class:'muted'},state.user?'尚无申请，可以从这里提供帮助。':'尚无公开申请；登录后可申请并查看进度。'));
-
-
-  const topicActions=el('div',{},el('div',{class:'prose'},e.description||'发起人尚未填写介绍。'));
-  if(e.isOwner&&!['cancelled','completed'].includes(e.status)){
-    const row=el('div',{class:'inline-actions'});
-    if(e.status==='draft')row.append(btn('编辑草稿',()=>renderEventForm(e)),btn('预览并发布',()=>publishPreview(e),'button dark'));
-    else if(beforeStart)row.append(btn('更正活动介绍',()=>{const f=el('form',{},el('h2',{},'更正活动介绍'),field('介绍','description','textarea',e.description),el('button',{class:'button dark',type:'submit'},'保存更正'));f.onsubmit=async ev=>{ev.preventDefault();try{await command('describe',{description:f.elements.description.value});}catch(err){errorAt(f,err);}};modal(f);}));
-    topicActions.append(row);
-  }
-  node('明确交流主题',e.description?'主题已发布':'等待填写主题',e.status==='draft',e.status==='draft'?'参与':'查看',topicActions,e.status==='draft');flow.append(arrow());
-
-  const venueCondition=conditions.find(c=>c.key==='venue');
-  const venueStatus=e.rules.venueRequired?(venueCondition?.satisfied?'场地已确认':`场地待确认 · ${venueCondition?.current||0}/${venueCondition?.required||e.rules.maxPeople}`):'时间已确定 · 场地可选';
-  const placeDetail=el('div',{},el('p',{class:'journey-lead'},`${date(e.rules.startsAt)} — ${date(e.rules.endsAt)}`),el('p',{class:'muted'},`${e.city} · Europe/Amsterdam · 场地地址${e.rules.addressVisibility==='public'?'公开':'仅向有权限的参与者展示'}`),contributionDetail(['venue']));
-  node('确定时间与地点',venueStatus,active&&beforeStart,'参与',placeDetail);flow.append(arrow());
-
-  const repair=(e.repairs||[]).find(r=>r.key==='people'),full=(e.counts?.joined||0)>=e.rules.maxPeople;
-  const registrationOpen=active&&beforeStart&&(Date.now()<e.rules.registrationDeadline||!!repair);
-  const waitOpen=e.rules.waitlist&&Date.now()<e.rules.promotionDeadline;
-  const joinDetail=el('div',{},el('p',{class:'muted'},`最低 ${e.rules.minPeople} 人，最多 ${e.rules.maxPeople} 人；${e.rules.waitlist?'满员后按顺序候补':'不开放候补'}。报名截止：${date(e.rules.registrationDeadline)}`));
-  if(joined&&joined!=='left'){
-    joinDetail.append(el('p',{class:'form-note'},`我的状态：${statusNames[joined]}${joined==='waitlisted'&&p?.position?' · 候补第 '+p.position+' 位':''}`));
-    if(active&&(beforeStart||joined==='waitlisted'))joinDetail.append(btn(joined==='waitlisted'?'退出候补':'退出报名',()=>confirmation('退出这场聚会？','席位将按规则释放。','leave'),'button quiet'));
-  }
-  else if(registrationOpen&&(!full||waitOpen))joinDetail.append(btn(full?'加入候补':'我要参加',()=>confirmation('确认本人报名',`${e.title} · ${date(e.rules.startsAt)}`,'join'),'button orange'));
-  else joinDetail.append(el('p',{class:'form-note'},registrationOpen?'名额已满，候补不可用。':'报名已关闭。'));
-  joinDetail.append(el('details',{id:'detail-participants'},el('summary',{},'查看参与名单'),people.length?el('div',{class:'participant-list'},people.map(x=>el('div',{class:'person'},el('strong',{},`${x.nickname||'匿名参与者'}${x.isMe?'（我）':''} · ${statusNames[x.status]||x.status}`),x.registrationMessage?el('p',{class:'registration-message'},x.registrationMessage):null))):el('p',{class:'muted'},'还没有人报名。')),el('div',{class:'inline-actions'},btn('问问活动助手 ✳',()=>openAI(),'button')));
-  const countStatus=`${e.counts?.joined||0}/${e.rules.minPeople} 人${joined&&joined!=='left'?' · 我'+statusNames[joined]:''}`;
-  const participationOpen=registrationOpen||(active&&beforeStart&&joined==='joined')||(active&&joined==='waitlisted');
-  node('达到最低参与人数',countStatus,participationOpen,'参与',joinDetail,e.status==='recruiting');flow.append(arrow());
-
-  const resourceKeys=['talks','cohosts','hosts','roles'],resourceConditions=conditions.filter(c=>resourceKeys.includes(c.key));
-  const missingResources=resourceConditions.filter(c=>!c.satisfied).length;
-  const continuousLabels=resourceConditions.filter(c=>c.continuous).map(c=>c.label);
-  const resourceDetail=el('div',{},el('p',{class:'muted'},`分享 ${e.rules.minTalks} · 协办 ${e.rules.minCohosts} · 现场负责人 ${e.rules.minHosts}。${e.rules.allowRoleOverlap?'允许角色兼任':'角色需由不同成员承担'}。申请通过后计入条件。`),el('p',{class:'muted'},`成团后持续检查：${continuousLabels.join('、')||'仅人数'}`),
-    contributionDetail(['cohost','host','talk']),el('details',{id:'detail-supplies'},el('summary',{},'物资与赞助'),contributionDetail(['material','pledge'])));
-  node('补齐分享、角色与资源',missingResources?`还有 ${missingResources} 项条件未满足`:'必要条件已满足',active&&beforeStart,'参与',resourceDetail);flow.append(arrow());
-
-  flow.append(el('div',{class:'code-diamond-wrap'},el('div',{class:'code-diamond'},el('div',{},el('strong',{},'截止时全部条件满足？'),el('span',{},date(e.rules.recruitmentDeadline))))));
-  const mainActive=!['cancelled'].includes(e.status),cancelActive=e.status==='cancelled';
-  flow.append(el('div',{class:'code-branches'},
-    el('div',{class:`code-branch ${mainActive?'active':'muted'}`},el('span',{},'YES'),el('strong',{},'确认成团')),
-    el('div',{class:`code-branch ${cancelActive?'active':'muted'}`},el('span',{},'NO'),el('strong',{},'取消活动'))));
-  flow.append(el('div',{class:'code-main-path'},arrow()));
-
-  const careDetail=el('div',{},el('p',{class:'muted'},`退出先递补；递补截止 ${date(e.rules.promotionDeadline)}。仍不足时进入 ${e.rules.repairMinutes} 分钟补齐倒计时，最晚到活动开始。`));
-  for(const r of e.repairs||[])careDetail.append(el('div',{class:'repair'},`${r.label} · 补齐截止 ${date(r.deadline)}`,el('div',{'data-countdown':r.deadline},countdown(r.deadline))));
-  const careOpen=e.status==='confirmed'||e.status==='repairing';
-  node('处理退出与资源变化',e.status==='repairing'?`补齐中 · ${(e.repairs||[]).length} 项异常`:'候补优先，必要时补齐',careOpen,careOpen?'参与':'查看',careDetail,careOpen);flow.append(arrow());
-
-  const finishDetail=el('div',{},e.reason?el('p',{class:'error-box'},e.reason):el('p',{class:'muted'},`${date(e.rules.startsAt)} — ${date(e.rules.endsAt)} · ${e.city}`));
-  finishDetail.append(el('details',{id:'detail-audit'},el('summary',{},'查看状态与评估记录'),el('p',{class:'muted'},`当前版本 v${e.version}`),(e.receipts||[]).slice().reverse().map(r=>el('div',{class:'receipt'},el('strong',{},`${date(r.at)} · ${r.kind}`),el('p',{},r.reason),r.descriptionChange?el('details',{id:`detail-description-${r.at}-${r.kind}`,class:'description-history'},el('summary',{},'查看介绍更正前后'),el('h3',{},'更正前'),el('div',{class:'prose'},r.descriptionChange.before||'（空）'),el('h3',{},'更正后'),el('div',{class:'prose'},r.descriptionChange.after||'（空）')):null,el('p',{class:'muted'},(r.conditions||[]).map(c=>`${c.label} ${c.current}/${c.required}`).join(' · '))))));
-  if(e.isOwner&&!['cancelled','completed'].includes(e.status))finishDetail.append(el('details',{id:'detail-cancel'},el('summary',{},'提前终止活动'),btn('取消活动',()=>confirmation('取消这场活动','此操作会通知参与者并记录原因。','cancel',{},true),'button danger')));
-  node('完成线下相聚',e.status==='cancelled'?'活动已取消':e.status==='completed'?'活动已结束':`等待 ${date(e.rules.startsAt)}`,false,'查看',finishDetail,e.status==='completed');
-  flow.append(arrow(),el('div',{class:'code-terminal code-end'},e.status==='cancelled'?'END · 已取消':'END · 线下相聚'));
-  app.replaceChildren(el('a',{class:'back',href:'#'},'← 所有聚会'),el('header',{class:'detail-header code-header'},el('span',{class:'eyebrow'},'ACTIVITY FLOW'),el('h1',{},e.title),badge(e.status)),flow);
-}
-
 function renderDetail(e){
   state.renderedPhase=eventTimePhase(e);state.detailVisible=true;state.pendingEvent=null;
   const p=e.myParticipation,joined=typeof p==='string'?p:p?.status;
@@ -254,7 +132,18 @@ function renderDetail(e){
   const yesActive=e.status!=='cancelled',noActive=e.status==='cancelled';
   flow.append(el('div',{class:'code-branches final-branches'},el('div',{class:`code-branch ${yesActive?'active':'muted'}`},el('span',{},'YES'),el('strong',{},e.status==='completed'?'活动已结束':'活动成行')),el('div',{class:`code-branch ${noActive?'active':'muted'}`},el('span',{},'NO'),el('strong',{},'活动未成行'))));
   flow.append(el('div',{class:`code-terminal code-end ${e.status==='cancelled'?'muted-terminal':''}`},e.status==='cancelled'?'END · 已取消':'END · 线下相聚'));
-  app.replaceChildren(el('a',{class:'back',href:'#'},'← 所有聚会'),el('header',{class:'detail-header code-header'},el('span',{class:'eyebrow'},'ACTIVITY FLOW'),el('h1',{},e.title),badge(e.status)),flow);
+  const canvas=el('div',{class:'dag-canvas'}),panel=el('aside',{class:'dag-panel','aria-label':'节点详情'});
+  const positions=[[50,20],[16.7,180],[16.7,350],[50,180],[50,350],[83.3,180],[83.3,350],[50,520]];
+  const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');svg.setAttribute('viewBox','0 0 1000 630');svg.setAttribute('preserveAspectRatio','none');svg.setAttribute('class','dag-links');svg.setAttribute('aria-hidden','true');
+  const path=document.createElementNS(svg.namespaceURI,'path');path.setAttribute('d','M500 116 V146 H167 V180 M500 146 V180 M500 146 H833 V180 M167 276 V350 M500 276 V350 M833 276 V350 M167 446 V483 H500 V520 M500 446 V520 M833 446 V483 H500');svg.append(path);canvas.append(svg);
+  const nodes=[...flow.querySelectorAll('.code-node')];
+  const taskLabels=['create_coffee','join','confirm_time','propose_venue','confirm_venue','apply_host','confirm_host','ready'];
+  nodes.forEach((box,i)=>{const button=el('button',{class:'dag-node '+(box.classList.contains('editable')?'dag-open':'dag-locked'),type:'button','aria-pressed':'false'},el('code',{class:'dag-task-id'},taskLabels[i]),el('strong',{},box.dataset.flowKey),el('small',{},box.querySelector('.node-status').textContent.replace('状态：','')));button.style.left=positions[i][0]+'%';button.style.top=positions[i][1]+'px';canvas.append(button);box._dagButton=button;});
+  // Keep each form alive when switching nodes; never duplicate API action controls.
+  const details=new Map(nodes.map(box=>[box,box.querySelector('.code-node-detail')]));
+  nodes.forEach(box=>{box._dagButton.onclick=()=>{panel.querySelector('.code-node-detail')?.remove();canvas.querySelectorAll('.dag-node').forEach(n=>n.setAttribute('aria-pressed',String(n===box._dagButton)));state.dagSelection={eventId:e.id,stage:box.dataset.flowKey};panel.replaceChildren(el('small',{},'节点详情'),el('h2',{},box.dataset.flowKey),el('p',{class:'muted'},box.querySelector('.node-status').textContent),details.get(box));};});
+  const selected=nodes.find(box=>state.dagSelection?.eventId===e.id&&box.dataset.flowKey===state.dagSelection.stage)||nodes[1]||nodes[0];selected._dagButton.click();
+  app.replaceChildren(el('a',{class:'back',href:'#'},'← 所有聚会'),el('header',{class:'detail-header code-header'},el('span',{class:'eyebrow'},'COFFEE DAG / GRAPH'),el('h1',{},e.title),badge(e.status)),el('div',{class:'dag-workspace'},el('section',{class:'dag-graph'},el('div',{class:'dag-toolbar'},'Graph · 每个节点，都是相聚的一步 · 点击查看或参与'),canvas,el('p',{class:'muted'},'报名 / 提议 → 发起人确认 → READY · 截止后按规则成行或取消')),panel));
 }
 
 function publishPreview(e){const f=el('form',{},el('h2',{},'发布前，最后看一眼'),el('div',{class:'preview'},el('h3',{},e.title),el('p',{},`${e.city} · ${e.rules.timeSlots?.length?'候选时段 '+e.rules.timeSlots.length+' 个':date(e.rules.startsAt)}`),(e.rules.timeSlots||[]).map(s=>el('p',{},`${date(s.startsAt)} — ${date(s.endsAt)}`)),el('p',{class:'prose'},e.description),el('p',{},`成行最低 ${e.rules.minPeople} 人，最多 ${e.rules.maxPeople} 人`),el('p',{},`征集截止：${date(e.rules.recruitmentDeadline)}`),el('p',{},`结束：${date(e.rules.endsAt)} · 报名截止：${date(e.rules.registrationDeadline)} · 递补截止：${date(e.rules.promotionDeadline)}`),el('p',{},`场地${e.rules.venueRequired?'必需':'非必需'} · 现场负责人 ${e.rules.minHosts}`),el('p',{},`${e.rules.waitlist?'允许候补':'不开放候补'} · ${e.rules.allowRoleOverlap?'允许角色兼任':'角色不可兼任'} · 补齐 ${e.rules.repairMinutes} 分钟`),el('p',{},`持续检查：${[['continuousVenue','场地'],['continuousTalks','分享'],['continuousCohosts','协办'],['continuousHosts','现场负责人']].filter(([k])=>e.rules[k]).map(([,v])=>v).join('、')||'无'} · 地址${e.rules.addressVisibility==='public'?'公开':'仅参与者可见'}`)),el('p',{class:'form-note'},'发布后，人数、截止时间与其他成行规则将锁定。活动创建者不会自动报名，也不会自动成为现场负责人。'),el('button',{type:'submit',class:'button orange'},'确认规则并发布'));f.onsubmit=async ev=>{ev.preventDefault();const b=f.querySelector('button[type=submit]');b.disabled=true;try{await command('publish');}catch(err){errorAt(f,err);}finally{b.disabled=false;}};modal(f);}
@@ -286,7 +175,7 @@ function openAI(){if(!requireUser())return;$('#ai-panel').hidden=false;$('#ai-in
 $('#ai-close').onclick=()=>{closeAI();applyPendingEvent();};
 $('#ai-form').onsubmit=async e=>{e.preventDefault();if(!state.event)return;const id=state.event.id;const generation=state.aiGeneration;const input=$('#ai-input');const message=input.value.trim();if(!message)return;const root=$('#ai-messages');root.append(el('div',{class:'ai-message user'},message));input.value='';const submit=$('#ai-form button');submit.disabled=true;try{const result=await api('/api/ai',{eventId:id,message});if(state.event?.id!==id||generation!==state.aiGeneration||$('#ai-panel').hidden)return;root.append(el('div',{class:'ai-message'},result.reply));root.querySelectorAll('.ai-proposal').forEach(x=>x.remove());state.proposal=null;if(result.proposal){const p=result.proposal;p.eventVersion=state.event.version;state.proposal=p;state.aiReviewPending=false;const card=el('div',{class:'ai-proposal'},el('strong',{},'等待你的确认'),el('p',{},`活动：${p.eventTitle}`),el('p',{},`操作：${actions[p.action?.action||p.action]||p.action?.action||'活动操作'}`),el('pre',{class:'prose'},typeof p.action==='object'?JSON.stringify(p.action,null,2):''),el('p',{class:'muted'},`有效至 ${date(p.expiresAt)}`));card.append(btn('确认执行',async ev=>{ev.currentTarget.disabled=true;try{if(state.proposal?.id!==p.id||state.event?.id!==id)throw new Error('活动或确认卡已变化，请重新向助手提出请求。');if(Date.now()>=p.expiresAt)throw new Error('确认卡已过期，请重新生成。');await api('/api/ai/confirm',{proposalId:p.id});state.proposal=null;card.replaceChildren(el('strong',{},'✓ 操作已完成'));await loadEvent(id);toast('助手操作已执行');}catch(err){errorAt(card,err);}finally{if(ev.target.isConnected)ev.target.disabled=false;}},'button dark'),btn('不执行',()=>{state.proposal=null;card.remove();applyPendingEvent();},'button quiet'));root.append(card);}root.scrollTop=root.scrollHeight;}catch(err){if(state.event?.id===id&&generation===state.aiGeneration)errorAt(root,err);}finally{submit.disabled=false;}};
 async function loadEvent(id){const token=++state.loading;try{const r=await api(`/api/events/${encodeURIComponent(id)}`);if(token!==state.loading)return;const e=r.event;for(const k of ['canManage','isOwner','myParticipation','myApplications','conditions','counts','participants','applications','receipts','preferenceSummary'])if(r[k]!==undefined)e[k]=r[k];if(state.event?.id===e.id&&state.event.version!==e.version)invalidateAIProposal();state.event=e;renderDetail(e);}catch(err){if(token!==state.loading)return;app.replaceChildren(el('a',{class:'back',href:'#'},'← 返回聚会列表'));errorAt(app,err);app.append(btn('重试',()=>loadEvent(id)));}}
-async function route(){state.detailVisible=false;state.pendingEvent=null;const path=location.hash.slice(1);const previous=state.event?.id;const id=path.startsWith('event/')?path.slice(6):null;if(id!==previous)closeAI();if(path==='new'){state.loading++;state.event=null;renderEventForm();return;}app.replaceChildren(el('div',{class:'loading',role:'status'},'正在准备这张咖啡桌…'));if(id)return loadEvent(id);state.event=null;const token=++state.loading;try{const r=await api('/api/events');if(token!==state.loading)return;state.events=r.events||[];if(r.user!==undefined){state.user=r.user?{...state.user,...r.user}:null;updateAccount();}renderHome();}catch(err){if(token!==state.loading)return;app.replaceChildren(hero());errorAt(app,err);app.append(btn('重新加载活动',route));}}
+async function route(){state.detailVisible=false;state.pendingEvent=null;const path=location.hash.slice(1);const previous=state.event?.id;const id=path.startsWith('event/')?path.slice(6):null;if(id!==previous)closeAI();if(path==='cli'||path.startsWith('cli/')){state.loading++;state.event=null;renderCliDocs(app);return;}if(path==='new'){state.loading++;state.event=null;renderEventForm();return;}app.replaceChildren(el('div',{class:'loading',role:'status'},'正在准备这张咖啡桌…'));if(id)return loadEvent(id);state.event=null;const token=++state.loading;try{const r=await api('/api/events');if(token!==state.loading)return;state.events=r.events||[];if(r.user!==undefined){state.user=r.user?{...state.user,...r.user}:null;updateAccount();}renderHome();}catch(err){if(token!==state.loading)return;app.replaceChildren(hero());errorAt(app,err);app.append(btn('重新加载活动',route));}}
 
 function eventTimePhase(e){const now=Date.now();return [e.rules.recruitmentDeadline,e.rules.registrationDeadline,e.rules.promotionDeadline,e.rules.startsAt,e.rules.endsAt].map(t=>now>=t?'1':'0').join('');}
 function invalidateAIProposal(){

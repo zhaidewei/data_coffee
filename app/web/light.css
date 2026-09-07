@@ -1,0 +1,24 @@
+/* Theme changes appearance only; navigation and activity state are shared. */
+
+:root[data-theme=light]{color-scheme:light;--paper:#f4f7fb;--white:#fff;--ink:#24354b;--muted:#5f7087;--orange:#246ac6;--line:#d6dfea;--green:#168451}
+[data-theme=light] .workspace-nav{background:#e7eef8;border-color:#cad8e9}
+[data-theme=light] .workspace-nav .nav-explore,[data-theme=light] .workspace-nav .button{color:#395675}
+[data-theme=light] .workspace-nav .button:hover,[data-theme=light] .workspace-nav .nav-explore:hover{color:#145bba}
+[data-theme=light] .workspace-nav #create-button small{color:#526b89}
+[data-theme=light] .overview-total{background:#e5efff;color:#245a9c}
+[data-theme=light] .overview .eyebrow,[data-theme=light] .overview-timezone{color:#59718e}
+[data-theme=light] .overview-controls,[data-theme=light] .overview-geography,[data-theme=light] .overview-event,[data-theme=light] .overview .empty{background:#fff}
+[data-theme=light] .overview .filter{color:#526780}[data-theme=light] .overview .filter:hover{background:#edf3fb}[data-theme=light] .overview .filter.active{background:#e1edff;border-color:#9ebde6;color:#245a9c}
+[data-theme=light] .overview-city{background:#f7f9fc;border-color:#d5dfeb;color:#425d7b}[data-theme=light] .overview-city.active{background:#e3efff;border-color:#81aade;color:#214f88}[data-theme=light] .city-count{background:#dee8f5;color:#31577f}
+[data-theme=light] .overview-event:hover{background:#f9fbff;border-color:#7fa6d6}
+[data-theme=light] .overview-event-meta,[data-theme=light] .overview-event-bottom span:last-child{color:#2766aa}
+[data-theme=light] .overview-slot-list,[data-theme=light] .overview-description,[data-theme=light] .overview-event-bottom{color:#5e7087}
+[data-theme=light] .badge{background:#dfebfc;color:#315782}[data-theme=light] .badge.confirmed,[data-theme=light] .badge.completed{background:#d7f3e3;color:#14643d}[data-theme=light] .badge.cancelled{background:#ffe1e6;color:#a3213b}[data-theme=light] .badge.repairing{background:#ffedcf;color:#855106}
+[data-theme=light] .real-map{border-color:#ced9e4}[data-theme=light] .real-map-status{background:#edf3f9;color:#52687d}
+[data-theme=light] .dag-graph{background-color:#f4f7fb;background-image:radial-gradient(#c7d5e6 1px,transparent 1px)}[data-theme=light] .dag-toolbar{color:#567292}
+[data-theme=light] .dag-node{background:#fff;color:#24354b;border-color:#aabbce}[data-theme=light] .dag-node:hover{background:#eef5ff}[data-theme=light] .dag-node[aria-pressed=true]{background:#eaf3ff;outline-color:#347bd5}[data-theme=light] .dag-node small{color:#566b84}[data-theme=light] .dag-task-id{color:#276bbd}
+[data-theme=light] .dag-panel,[data-theme=light] dialog,[data-theme=light] .ai-panel{background:#fff;color:var(--ink)}
+[data-theme=light] input,[data-theme=light] textarea,[data-theme=light] select,[data-theme=light] .overview-dates input{background:#fff;color:var(--ink);border-color:#b9c8db}
+[data-theme=light] .form-note,[data-theme=light] .notice,[data-theme=light] .dag-panel .preference-summary>*,[data-theme=light] .dag-panel .slot-result{background:#edf3fa;color:#38516f;border-color:#ccd9e9}
+[data-theme=light] .button:hover{background:#e5eefb}[data-theme=light] .button.dark:hover,[data-theme=light] .button.orange:hover{background:#3479ed}
+

@@ -17,9 +17,16 @@ async function commit(env:Env,old:Activity,e:Activity,notices:Notice[],actor:str
   }
   const result=await env.DB.batch(sql);return (result[0].meta.changes??0)>0;
 }
-export async function advance(env:Env,id:string,clock=Date.now):Promise<Activity> {
+const advances=new WeakMap<object,Map<string,Promise<Activity>>>();
+export async function advance(env:Env,id:string,clock=Date.now):Promise<Activity>{
+  let pending=advances.get(env.DB);if(!pending){pending=new Map();advances.set(env.DB,pending);}
+  const existing=pending.get(id);if(existing)return structuredClone(await existing);
+  const task=advanceOnce(env,id,clock);pending.set(id,task);
+  try{return structuredClone(await task);}finally{if(pending.get(id)===task)pending.delete(id);}
+}
+async function advanceOnce(env:Env,id:string,clock:()=>number):Promise<Activity> {
   for(let retry=0;retry<12;retry++){
-    const old=await load(env,id);const e=structuredClone(old);const out:Notice[]=[];const now=clock();
+    const old=await load(env,id);const now=clock();const due=nextDue(old);if((due===null||due>now)&&!old.repairs.some(r=>['talks','cohosts','roles'].includes(r.key)))return old;const e=structuredClone(old);const out:Notice[]=[];
     reconcile(e,now,out);
     if(JSON.stringify(e)===JSON.stringify(old))return old;
     if(await commit(env,old,e,out,'system','reconcile',now))return e;

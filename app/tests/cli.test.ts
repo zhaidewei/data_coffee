@@ -1,6 +1,6 @@
 import {describe,it,expect,vi} from 'vitest';
 // @ts-expect-error CLI is deliberately dependency-free JavaScript.
-import {run} from '../cli/data-coffee.mjs';
+import {run} from '../cli/dc-flow.mjs';
 
 async function invoke(args:string[],response=new Response('{"ok":true}'),env={},input=''){
   let stdout='',stderr='';const fetch=vi.fn().mockResolvedValue(response);

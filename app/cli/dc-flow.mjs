@@ -3,7 +3,7 @@ import {readFile} from 'node:fs/promises';
 import {pathToFileURL} from 'node:url';
 
 export const help = `Data Coffee CLI（Node.js 22+）
-用法：data-coffee <命令> [选项]
+用法：dc-flow <命令> [选项]
   events list
   events get <id>
   events create --data <JSON|@文件|->       创建草稿

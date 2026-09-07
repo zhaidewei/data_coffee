@@ -18,13 +18,13 @@ npm run dev
 
 ## CLI 与 Agent 调用
 
-读者：通过终端或 Agent 操作活动的维护者与用户。CLI 使用网页相同的 HTTP API、邮箱身份及权限检查。Node.js 22+ 即可，无新增运行依赖；在本目录运行 `npm run cli -- --help`，脚本集成建议直接使用 `node cli/data-coffee.mjs`，避免 npm 输出干扰 JSON。
+读者：通过终端或 Agent 操作活动的维护者与用户。CLI 使用网页相同的 HTTP API、邮箱身份及权限检查。Node.js 22+ 即可，无新增运行依赖；在本目录运行 `npm run cli -- --help`，脚本集成建议直接使用 `node cli/dc-flow.mjs`，避免 npm 输出干扰 JSON。
 
 ```sh
-node cli/data-coffee.mjs events list
-node cli/data-coffee.mjs events get EVENT_ID
-node cli/data-coffee.mjs events create --data @draft.json
-node cli/data-coffee.mjs events action EVENT_ID publish --version 0 --key publish-unique-001
+node cli/dc-flow.mjs events list
+node cli/dc-flow.mjs events get EVENT_ID
+node cli/dc-flow.mjs events create --data @draft.json
+node cli/dc-flow.mjs events action EVENT_ID publish --version 0 --key publish-unique-001
 ```
 
 `--base-url` 或 `DATA_COFFEE_BASE_URL` 指定服务地址，默认本地 `http://localhost:8787`；远端必须 HTTPS。`--data` 接收 JSON、`@文件` 或 `-`（stdin）。草稿结构与 `/api/events` POST 一致，动作附加字段与 `/api/events/:id/actions` 一致；CLI 不绕过服务端校验。所有修改动作显式提供当前 `version` 与唯一 `--key`；冲突退出码 4，需要重新读取并判断。未知结果重试同一次动作时复用原始 key 和参数；创建草稿 API 尚无幂等支持，超时后先查询活动列表，避免重复创建。CLI 不自动重试。

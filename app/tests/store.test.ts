@@ -1,7 +1,7 @@
 import {beforeAll,afterAll,beforeEach,describe,it,expect} from 'vitest';
 import {Miniflare,convertV4MiniflareOptions} from 'miniflare';
 import {readFileSync} from 'node:fs';
-import {execute,insertActivity,load,project} from '../worker/store';
+import {execute,insertActivity,load,project,advance} from '../worker/store';
 import type {Env,Rules,User} from '../worker/types';
 let mf:Miniflare,env:Env;
 const user=(id:string):User=>({id,email:`${id}@test.invalid`,nickname:id,publicNickname:false});
@@ -18,3 +18,5 @@ describe('D1事务与公开投影',()=>{
  it('草稿隔离且他人不可查看',async()=>{const e=await published();const draft=await insertActivity(env,{title:'草稿',city:'Rotterdam',description:'',rules:base()},user('another'));await execute(env,e.id,{action:'join'},user('a'),'join');expect((await load(env,draft.id)).participants).toHaveLength(0);await expect(project(env,draft,user('a'))).rejects.toThrow();});
  it('偏好只按汇总公开并向本人回读',async()=>{let e=await published();e=await execute(env,e.id,{action:'join',timePreference:'周六下午',placePreference:'Amsterdam'},user('a'),'pref-a');e=await execute(env,e.id,{action:'join',timePreference:'周六下午',placePreference:'Utrecht'},user('b'),'pref-b');const anon=await project(env,e,null);expect(anon.preferenceSummary).toMatchObject({times:[{label:'周六下午',count:2}],places:[{label:'Amsterdam',count:1},{label:'Utrecht',count:1}]});expect(JSON.stringify(anon.participants)).not.toContain('周六下午');const mine=await project(env,e,user('a'));expect(mine.myParticipation).toMatchObject({timePreference:'周六下午',placePreference:'Amsterdam'});});
 });
+
+it('100次并发读取只提交一次到期结算与通知',async()=>{let e=await published();e=await execute(env,e.id,{action:'join'},user('a'),'one');const before=e.version;const results=await Promise.all(Array.from({length:100},()=>advance(env,e.id,()=>e.rules.recruitmentDeadline)));expect(results.every(r=>r.status==='confirmed'&&r.version===before+1)).toBe(true);const audit=await env.DB.prepare("SELECT count(*) n FROM audit WHERE event_id=? AND action='reconcile'").bind(e.id).first<{n:number}>();expect(audit!.n).toBe(1);const out=await env.DB.prepare("SELECT user_id FROM outbox WHERE subject='活动已成团'").all<{user_id:string}>();expect(out.results.map(r=>r.user_id).sort()).toEqual(['a','owner']);});

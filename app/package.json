@@ -2,9 +2,9 @@
   "name": "data-coffee-web",
   "private": true,
   "type": "module",
-  "bin": { "data-coffee": "cli/data-coffee.mjs" },
+  "bin": { "dc-flow": "cli/dc-flow.mjs" },
   "scripts": {
-    "cli": "node cli/data-coffee.mjs",
+    "cli": "node cli/dc-flow.mjs",
     "dev": "wrangler dev --port 8787",
     "check": "tsc --noEmit",
     "test": "vitest run",
