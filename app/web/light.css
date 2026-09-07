@@ -22,3 +22,4 @@
 [data-theme=light] .form-note,[data-theme=light] .notice,[data-theme=light] .dag-panel .preference-summary>*,[data-theme=light] .dag-panel .slot-result{background:#edf3fa;color:#38516f;border-color:#ccd9e9}
 [data-theme=light] .button:hover{background:#e5eefb}[data-theme=light] .button.dark:hover,[data-theme=light] .button.orange:hover{background:#3479ed}
 
+[data-theme=light] .field-error{color:#b3213b}

@@ -11,7 +11,7 @@ export function textValue(value: unknown, label: string, max = 500, min = 1): st
 export function validateRules(input: unknown, now: number): Rules {
   if (!input || typeof input !== 'object') return fail('请填写活动规则');
   const r = {...input,minTalks:0,minCohosts:0,continuousTalks:false,continuousCohosts:false,allowRoleOverlap:true} as Rules;
-  const ints: [keyof Rules, number, number][] = [['minPeople',1,700],['maxPeople',1,700],['minTalks',0,20],['minCohosts',0,20],['minHosts',0,20],['repairMinutes',1,10080]];
+  const ints: [keyof Rules, number, number][] = [['minPeople',3,100],['maxPeople',3,100],['minTalks',0,20],['minCohosts',0,20],['minHosts',0,10],['repairMinutes',1,10080]];
   for (const [key,min,max] of ints) if (!Number.isInteger(r[key]) || Number(r[key]) < min || Number(r[key]) > max) fail(`${key} 超出有效范围`);
   for (const key of ['recruitmentDeadline','startsAt','endsAt','registrationDeadline','promotionDeadline'] as const) if (!Number.isSafeInteger(r[key])) fail('请填写有效日期时间');
   for (const key of ['waitlist','venueRequired','allowRoleOverlap','continuousVenue','continuousTalks','continuousCohosts','continuousHosts'] as const) if (typeof r[key] !== 'boolean') fail('规则开关必须明确选择');
