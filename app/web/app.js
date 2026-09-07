@@ -301,5 +301,28 @@ document.addEventListener('visibilitychange',()=>{if(!document.hidden)pollDetail
 $('#modal').addEventListener('close',applyPendingEvent);
 document.addEventListener('focusout',()=>setTimeout(applyPendingEvent,0));
 
-window.addEventListener('hashchange',()=>{route();window.scrollTo({top:0});});
+// Keep the overview reading position while visiting an activity or another page.
+let overviewScrollY=0,navigationGeneration=0,restoringOverview=false;
+const atOverview=()=>!location.hash||location.hash==='#';
+history.scrollRestoration='manual';
+window.addEventListener('scroll',()=>{
+  if(atOverview()&&!restoringOverview&&app.querySelector('.overview'))overviewScrollY=window.scrollY;
+},{passive:true});
+document.addEventListener('click',event=>{
+  const link=event.target.closest?.('a[href]');
+  if(atOverview()&&app.querySelector('.overview')&&link?.hash){
+    overviewScrollY=window.scrollY;
+  }
+},true);
+window.addEventListener('hashchange',async()=>{
+  const generation=++navigationGeneration,returning=atOverview();
+  restoringOverview=true;
+  await route();
+  // Map mounting is scheduled on the first frame; restore after its container exists.
+  requestAnimationFrame(()=>requestAnimationFrame(()=>{
+    if(generation!==navigationGeneration)return;
+    window.scrollTo({top:returning?overviewScrollY:0,behavior:'instant'});
+    restoringOverview=false;
+  }));
+});
 (async()=>{try{const r=await api('/api/me');state.user=r.user;updateAccount();}catch(e){toast(e.message);}await route();})();
