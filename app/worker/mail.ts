@@ -4,7 +4,7 @@ class MailError extends Error {
   constructor(public readonly code: string, public readonly retryable = false) { super(code); }
 }
 function configured(env: Env): void {
-  if (!env.BREVO_API_KEY || !env.EMAIL_FROM || !/^[^\s@<>]+@zhaidewei\.com$/i.test(env.EMAIL_FROM)) throw new MailError('mail_not_configured');
+  if (!env.BREVO_API_KEY || !env.EMAIL_FROM || !/^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/i.test(env.EMAIL_FROM)) throw new MailError('mail_not_configured');
 }
 async function reserveBudget(env: Env, priority: boolean): Promise<boolean> {
   const parsed = Number(env.MAIL_DAILY_LIMIT || 300);
