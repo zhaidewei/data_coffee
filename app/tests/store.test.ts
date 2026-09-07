@@ -1,7 +1,7 @@
 import {beforeAll,afterAll,beforeEach,describe,it,expect} from 'vitest';
 import {Miniflare,convertV4MiniflareOptions} from 'miniflare';
 import {readFileSync} from 'node:fs';
-import {execute,insertActivity,load,project,advance} from '../worker/store';
+import {deleteDraft,execute,insertActivity,load,project,advance} from '../worker/store';
 import type {Env,Rules,User} from '../worker/types';
 let mf:Miniflare,env:Env;
 const user=(id:string):User=>({id,email:`${id}@test.invalid`,nickname:id,publicNickname:false});
@@ -20,3 +20,33 @@ describe('D1事务与公开投影',()=>{
 });
 
 it('100次并发读取只提交一次到期结算与通知',async()=>{let e=await published();for(const id of ['a','b','c'])e=await execute(env,e.id,{action:'join'},user(id),'join-'+id);const before=e.version;const results=await Promise.all(Array.from({length:100},()=>advance(env,e.id,()=>e.rules.recruitmentDeadline)));expect(results.every(r=>r.status==='confirmed'&&r.version===before+1)).toBe(true);const audit=await env.DB.prepare("SELECT count(*) n FROM audit WHERE event_id=? AND action='reconcile'").bind(e.id).first<{n:number}>();expect(audit!.n).toBe(1);const out=await env.DB.prepare("SELECT user_id FROM outbox WHERE subject='活动已成团'").all<{user_id:string}>();expect(out.results.map(r=>r.user_id).sort()).toEqual(['a','b','c','owner']);});
+
+// Every database below is an isolated Miniflare D1 database.
+describe('删除草稿',()=>{
+ const draft=()=>insertActivity(env,{title:'待删除草稿',city:'Amsterdam',rules:base()},user('owner'));
+ it('仅owner可删除，保留删除审计且重复请求404',async()=>{
+  const e=await draft();
+  await expect(deleteDraft(env,e.id,user('other'),e.version)).rejects.toMatchObject({status:404});
+  await deleteDraft(env,e.id,user('owner'),e.version);
+  await expect(load(env,e.id)).rejects.toMatchObject({status:404});
+  await expect(deleteDraft(env,e.id,user('owner'),e.version)).rejects.toMatchObject({status:404});
+  const audit=await env.DB.prepare("SELECT action,version FROM audit WHERE event_id=? ORDER BY version").bind(e.id).all();
+  expect(audit.results).toEqual([{action:'create',version:0},{action:'delete_draft',version:1}]);
+ });
+ it('拒绝无效和旧版本，发布后不能删除',async()=>{
+  const e=await draft();
+  for(const v of [-1,0.5,NaN,1])await expect(deleteDraft(env,e.id,user('owner'),v)).rejects.toMatchObject({status:409});
+  const published=await execute(env,e.id,{action:'publish'},user('owner'),'publish',e.version);
+  await expect(deleteDraft(env,e.id,user('owner'),published.version)).rejects.toMatchObject({status:409});
+  expect((await load(env,e.id)).status).toBe('recruiting');
+ });
+ it('并发发布与删除只有一个成功，审计与最终状态一致',async()=>{
+  const e=await draft();
+  const result=await Promise.allSettled([deleteDraft(env,e.id,user('owner'),e.version),execute(env,e.id,{action:'publish'},user('owner'),'publish',e.version)]);
+  expect(result.filter(r=>r.status==='fulfilled')).toHaveLength(1);
+  const actions=await env.DB.prepare('SELECT action FROM audit WHERE event_id=? AND version=1').bind(e.id).all<{action:string}>();
+  expect(actions.results).toHaveLength(1);
+  if(result[0].status==='fulfilled'){expect(actions.results[0].action).toBe('delete_draft');await expect(load(env,e.id)).rejects.toMatchObject({status:404});}
+  else{expect(actions.results[0].action).toBe('publish');expect((await load(env,e.id)).status).toBe('recruiting');}
+ });
+});

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import {readFile} from 'node:fs/promises';
+import {readFile,realpath} from 'node:fs/promises';
 import {pathToFileURL} from 'node:url';
 
 export const help = `Data Coffee CLI（Node.js 22+）
@@ -82,4 +82,4 @@ export async function run(argv, io={}) {
     out(JSON.stringify(data)+'\n');return 0;
   }catch(error){err(JSON.stringify({error:error instanceof CliError?error.message:'CLI 输入或执行失败',...(error.status?{status:error.status}:{})})+'\n');return error instanceof CliError?error.exitCode:2;}
 }
-if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href)process.exitCode=await run(process.argv.slice(2));
+if(process.argv[1]&&import.meta.url===pathToFileURL(await realpath(process.argv[1])).href)process.exitCode=await run(process.argv.slice(2));

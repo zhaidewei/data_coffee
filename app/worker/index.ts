@@ -1,6 +1,6 @@
 import type {Env,User} from './types';
 import {DomainError,fail,textValue} from './engine';
-import {advance,execute,insertActivity,project,tick} from './store';
+import {advance,deleteDraft,execute,insertActivity,project,tick} from './store';
 import {currentUser,handleAuth} from './auth';
 import {drainMail} from './mail';
 import {handleAI} from './ai';
@@ -48,6 +48,12 @@ export default {
           const m=url.pathname.match(/^\/api\/events\/([a-zA-Z0-9-]+)(\/actions)?$/);
           if(!m)fail('接口不存在',404);
           if(!m[2]&&request.method==='GET'){const e=await advance(context,m[1]);res=json({event:await project(context,e,user)});}
+          else if(!m[2]&&request.method==='DELETE'){
+            if(!user)fail('请先验证邮箱登录',401);
+            const b=await body(request);
+            if(typeof b.version!=='number')fail('缺少有效活动版本，请刷新',409);
+            await deleteDraft(context,m[1],user!,b.version as number);res=json({deleted:true,id:m[1]});
+          }
           else if(m[2]&&request.method==='POST'){
             if(!user)fail('请先验证邮箱登录',401);
             const b=await body(request);const action=textValue(b.action,'操作',30);

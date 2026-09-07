@@ -6,6 +6,20 @@ export async function load(env:Env,id:string):Promise<Activity> {
   if(!row)return fail('活动不存在',404);
   return JSON.parse(row.document);
 }
+export async function deleteDraft(env:Env,id:string,user:User,version:number):Promise<void>{
+  if(!Number.isSafeInteger(version)||version<0)fail('缺少有效活动版本，请刷新',409);
+  const old=await load(env,id);
+  if(old.ownerId!==user.id)fail('活动不存在',404);
+  if(old.status!=='draft')fail('仅可删除草稿',409);
+  if(old.version!==version)fail('活动状态已变化，请刷新后重新确认',409);
+  // D1 batch is transactional: only the exact owner-held draft snapshot can be removed.
+  const predicate="id=? AND version=? AND json_extract(document,'$.ownerId')=? AND json_extract(document,'$.status')='draft'";
+  const results=await env.DB.batch([
+    env.DB.prepare(`INSERT INTO audit(id,event_id,actor_id,action,version,created_at) SELECT ?,?,?,'delete_draft',?,? WHERE EXISTS(SELECT 1 FROM activities WHERE ${predicate})`).bind(crypto.randomUUID(),id,user.id,version+1,Date.now(),id,version,user.id),
+    env.DB.prepare(`DELETE FROM activities WHERE ${predicate}`).bind(id,version,user.id)
+  ]);
+  if(!results[1].meta.changes)fail('活动状态已变化，请刷新后重新确认',409);
+}
 async function commit(env:Env,old:Activity,e:Activity,notices:Notice[],actor:string,action:string,now:number):Promise<boolean> {
   const marker=crypto.randomUUID();e.version=old.version+1;
   const sql=[env.DB.prepare('UPDATE activities SET version=?,document=?,commit_id=?,next_due=? WHERE id=? AND version=?').bind(e.version,JSON.stringify(e),marker,nextDue(e),e.id,old.version),
