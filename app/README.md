@@ -16,6 +16,23 @@ npm run dev
 
 验证：`npm run check`、`npm test`、`npm run build`。build 只是 Workers dry-run，不部署。依赖版本及 lockfile 固定；Miniflare 当前测试运行器为 5.20260903.0-alpha，未用于线上运行。
 
+## CLI 与 Agent 调用
+
+读者：通过终端或 Agent 操作活动的维护者与用户。CLI 使用网页相同的 HTTP API、邮箱身份及权限检查。Node.js 22+ 即可，无新增运行依赖；在本目录运行 `npm run cli -- --help`，脚本集成建议直接使用 `node cli/data-coffee.mjs`，避免 npm 输出干扰 JSON。
+
+```sh
+node cli/data-coffee.mjs events list
+node cli/data-coffee.mjs events get EVENT_ID
+node cli/data-coffee.mjs events create --data @draft.json
+node cli/data-coffee.mjs events action EVENT_ID publish --version 0 --key publish-unique-001
+```
+
+`--base-url` 或 `DATA_COFFEE_BASE_URL` 指定服务地址，默认本地 `http://localhost:8787`；远端必须 HTTPS。`--data` 接收 JSON、`@文件` 或 `-`（stdin）。草稿结构与 `/api/events` POST 一致，动作附加字段与 `/api/events/:id/actions` 一致；CLI 不绕过服务端校验。所有修改动作显式提供当前 `version` 与唯一 `--key`；冲突退出码 4，需要重新读取并判断。未知结果重试同一次动作时复用原始 key 和参数；创建草稿 API 尚无幂等支持，超时后先查询活动列表，避免重复创建。CLI 不自动重试。
+
+邮箱登录：`auth request --data ...` 的 JSON 为 `{email}`，该命令会向目标服务请求真实验证码；`auth verify --data -` 接收 `{email,code,nickname}`。普通验证输出只含用户；显式 `--session-only` 输出 `{sessionToken}` 供管道捕获。会话仅经 `DATA_COFFEE_SESSION` 或 `--session-stdin` 注入；后者接收原始 token 或该 JSON。使用本地 `secret` CLI 在调用点读取并通过管道注入，不把会话、验证码写进命令参数、文档或文件。认证请求体优先 stdin，不能同时让会话和请求体占用 stdin。CLI 不保存会话。`auth me` 查询本人；`auth logout` 注销当前会话。
+
+成功输出为 stdout JSON；错误为 stderr JSON。退出码：0 成功，1 网络或 API 错误，2 参数错误，3 认证/权限错误，4 版本冲突。请求超时 30 秒，拒绝 HTTP 重定向。活动列表遵循服务端当前最多 200 条及草稿可见性规则；当前没有分页、删除活动、自动登录刷新或独立 Agent token。测试通过 mock HTTP 验证参数和错误通道，不发送真实邮件。
+
 ## 云端开发环境准备
 
 开发网址使用 Workers 提供的 workers.dev 地址。`wrangler.jsonc` 的 D1 ID 当前是占位符，不能当作已配置环境。需在目标 Cloudflare 账号创建独立开发数据库，将真实 ID 写入绑定，再执行远程迁移和部署。`APP_URL` 配置为实际 HTTPS 地址。

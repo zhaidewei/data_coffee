@@ -36,7 +36,7 @@ export function createActivity(input: Record<string,unknown>, ownerId: string, n
   return {id,ownerId,title:textValue(input.title,'标题',100),city:textValue(input.city,'城市',80),description:textValue(input.description??'','介绍',4000,0),rules:validateRules(input.rules,now),status:'draft',version:0,createdAt:now,participants:[],applications:[],repairs:[],receipts:[],sequence:0,processed:[]};
 }
 export const joined = (e: Activity) => e.participants.filter(p=>p.status==='joined');
-export const isManager = (e: Activity, userId: string) => userId===e.ownerId || e.applications.some(a=>a.kind==='cohost'&&a.userId===userId&&a.status==='approved');
+export const isManager = (e: Activity, userId: string) => userId===e.ownerId;
 export function conditions(e: Activity): Condition[] {
   const approved = e.applications.filter(a=>a.status==='approved');
   const cohosts = new Set(approved.filter(a=>a.kind==='cohost').map(a=>a.userId));
@@ -121,7 +121,12 @@ export function applyCommand(e:Activity,cmd:Command,userId:string,now:number,out
       const slot=e.rules.timeSlots?.find(s=>s.id===cmd.slotId);if(!slot)fail('候选时段不存在');
       e.selectedSlotId=slot.id;e.rules.startsAt=slot.startsAt;e.rules.endsAt=slot.endsAt;
       let seats=e.rules.maxPeople;
-      for(const p of e.participants.filter(p=>p.status!=='left').sort((a,b)=>a.order-b.order))p.status=p.availableSlotIds?.includes(slot.id)&&seats-->0?'joined':'waitlisted';
+      for(const p of e.participants.filter(p=>p.status!=='left').sort((a,b)=>a.order-b.order)){
+        const canAttend=p.availableSlotIds?.includes(slot.id);
+        p.status=canAttend&&seats>0?'joined':canAttend&&e.rules.waitlist?'waitlisted':'left';
+        if(p.status==='joined')seats--;
+        if(p.status==='left')out.push({userId:p.userId,subject:'报名未入选',text:canAttend?'最终时段席位已满，本场不开放候补；本次报名已结束。':'最终时段不在你选择的可参加时间内，本次报名已结束。'});
+      }
       record(e,now,'time_selected','最终时段已确认');
       announce(e,out,'活动时间已确认',new Date(slot.startsAt).toISOString()+'；仅能参加该时段的报名者计入成行人数，请查看报名状态。');
       break;
@@ -169,6 +174,7 @@ export function applyCommand(e:Activity,cmd:Command,userId:string,now:number,out
     case 'apply': {
       if(e.status==='draft')fail('发布征集后才能申请',409);
       const kind=cmd.kind as Application['kind'];
+      if(['cohost','talk'].includes(kind))fail('MVP 暂不支持分享和协办申请');
       if(!['cohost','host','talk','venue','material','pledge'].includes(kind))fail('申请类型无效');
       if(e.applications.filter(a=>a.userId===userId&&a.kind===kind&&a.status!=='withdrawn'&&a.status!=='rejected').length)fail('已有同类型申请，请先撤回再提交',409);
       if(e.applications.length>=1000)fail('本场申请记录已达上限');
@@ -177,15 +183,16 @@ export function applyCommand(e:Activity,cmd:Command,userId:string,now:number,out
       if(kind==='pledge'){if(typeof cmd.amount!=='number'||!Number.isFinite(cmd.amount)||cmd.amount<1||cmd.amount>100000)fail('请填写有效赞助意向金额');a.amount=cmd.amount;}
       if(kind==='talk'){if(!Number.isInteger(cmd.duration)||Number(cmd.duration)<1||Number(cmd.duration)>180)fail('分享时长须为1–180分钟');a.duration=Number(cmd.duration);}
       e.applications.push(a);
-      const reviewers=kind==='cohost'?[e.ownerId]:[e.ownerId,...e.applications.filter(a=>a.kind==='cohost'&&a.status==='approved').map(a=>a.userId)];
+      const reviewers=[e.ownerId];
       for(const reviewer of new Set(reviewers))out.push({userId:reviewer,subject:'有新的待处理申请',text:`「${e.title}」有新的${kind}申请，请进入活动管理查看。`});break;
     }
     case 'review': {
       const a=e.applications.find(a=>a.id===cmd.applicationId);if(!a)fail('申请不存在',404);
+      if(['cohost','talk'].includes(a.kind))fail('MVP 不再审批分享和协办申请');
       if(['cohost','venue','host'].includes(a.kind))owner(e,userId);else manager(e,userId);
       if(a.status!=='pending')fail('申请已处理或撤回',409);
       if(typeof cmd.approved!=='boolean')fail('请选择批准或拒绝');
-      if(a.kind==='venue'&&cmd.approved){for(const other of e.applications)if(other.kind==='venue'&&other.status==='approved'&&other.id!==a.id)other.status='pending';}
+      if(a.kind==='venue'&&cmd.approved){for(const other of e.applications)if(other.kind==='venue'&&other.status==='approved'&&other.id!==a.id){other.status='pending';other.updatedAt=now;other.reviewedBy=userId;other.reason='已选择其他最终场地，本提议保留备用';out.push({userId:other.userId,subject:'场地已转为备用',text:`「${e.title}」已确认其他场地，你提供的「${other.title}」保留备用，无需按最终场地继续准备。`});}}
       a.status=cmd.approved?'approved':'rejected';a.reviewedBy=userId;a.reason=textValue(cmd.reason??'','审核说明',500,0);a.updatedAt=now;
       out.push({userId:a.userId,subject:'申请审批结果',text:`你在「${e.title}」的申请已${cmd.approved?'通过':'拒绝'}。${a.reason}`});break;
     }
@@ -194,7 +201,7 @@ export function applyCommand(e:Activity,cmd:Command,userId:string,now:number,out
       if(cmd.action==='withdraw'){if(a.userId!==userId)fail('只能撤回本人的申请',403);}else{owner(e,userId);if(a.kind!=='cohost')fail('本入口仅撤销协办资格');}
       if(a.status==='withdrawn')break;
       a.status='withdrawn';a.updatedAt=now;
-      for(const id of new Set([a.userId,e.ownerId,...e.applications.filter(x=>x.kind==='cohost'&&x.status==='approved').map(x=>x.userId)]))out.push({userId:id,subject:'申请或资格已撤回',text:`「${e.title}」的${a.kind}申请或资格已撤回。`});break;
+      for(const id of new Set([a.userId,e.ownerId]))out.push({userId:id,subject:'申请或资格已撤回',text:`「${e.title}」的${a.kind}申请或资格已撤回。`});break;
     }
     case 'cancel': owner(e,userId);cancel(e,now,textValue(cmd.reason,'取消原因',500),out);return;
     default: fail('不支持的操作');

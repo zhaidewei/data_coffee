@@ -1,0 +1,37 @@
+import {beforeAll,afterAll,beforeEach,describe,it,expect} from 'vitest';
+import {Miniflare,convertV4MiniflareOptions} from 'miniflare';
+import {readFileSync} from 'node:fs';
+import {execute,insertActivity,load,project,advance} from '../worker/store';
+import type {Env,Rules,User} from '../worker/types';
+let mf:Miniflare,env:Env;
+const user=(id:string):User=>({id,email:`${id}@test.invalid`,nickname:id,publicNickname:false});
+const base=():Rules=>{const t=Date.now();return {minPeople:1,maxPeople:2,waitlist:true,recruitmentDeadline:t+3600000,startsAt:t+7200000,endsAt:t+10800000,registrationDeadline:t+6900000,promotionDeadline:t+6900000,repairMinutes:10,venueRequired:false,minTalks:0,minCohosts:0,minHosts:0,allowRoleOverlap:true,continuousVenue:true,continuousTalks:true,continuousCohosts:true,continuousHosts:true,addressVisibility:'participants'};};
+beforeAll(async()=>{mf=new Miniflare(convertV4MiniflareOptions({modules:true,script:'export default {fetch(){return new Response("ok")}}',d1Databases:['DB'],compatibilityDate:'2026-09-05'}));const DB=await mf.getD1Database('DB');env={DB:DB as unknown as D1Database,APP_ENV:'test',ASSETS:{} as Fetcher};for(const f of ['0001_events.sql','0002_identity.sql'])for(const s of readFileSync(new URL(`../migrations/${f}`,import.meta.url),'utf8').split(';').filter(s=>s.trim()))await DB.prepare(s).run();});
+afterAll(async()=>{await mf?.dispose();});
+beforeEach(async()=>{for(const table of ['activities','audit','outbox','users'])await env.DB.prepare(`DELETE FROM ${table}`).run();});
+
+it('多人完整活动：报名投票、确认、成行、候补、场地补齐、结束',async()=>{
+ const t=Date.now(),sat=t+7200000,sun=t+86400000;
+ const rules={...base(),minPeople:3,maxPeople:3,venueRequired:true,minHosts:1,timeSlots:[{id:'sat',startsAt:sat,endsAt:sat+3600000},{id:'sun',startsAt:sun,endsAt:sun+3600000}],startsAt:sat,endsAt:sat+3600000};
+ let e=await insertActivity(env,{title:'多人模拟 Data Coffee',city:'Amsterdam',description:'独立测试',rules},user('owner'));
+ let seq=0,now=t+1000;const steps:string[]=[];
+ const act=async(id:string,action:string,data:Record<string,unknown>={})=>{e=await execute(env,e.id,{action,...data},user(id),'simulation-'+(++seq),e.version,()=>now);};
+ const note=(label:string)=>steps.push(label+'：'+e.status+'，入选 '+e.participants.filter(p=>p.status==='joined').length+'，候补 '+e.participants.filter(p=>p.status==='waitlisted').length);
+ await act('owner','publish');expect(e.participants).toHaveLength(0);
+ for(const id of ['owner','alice','bob','carol'])await act(id,'join',{availableSlotIds:['sat','sun'],transportPreferences:['public_transport'],registrationMessage:'大家好，我是 '+id});
+ await act('dave','join',{availableSlotIds:['sun'],transportPreferences:['car']});note('5 人意向报名');
+ for(const id of ['venue-a','venue-b'])await act(id,'apply',{kind:'venue',title:id,detail:'靠近车站',address:'测试地址',capacity:3});
+ await act('alice','apply',{kind:'host',title:'主持报名',detail:'愿意主持'});
+ const venueA=e.applications.find(a=>a.userId==='venue-a')!.id,venueB=e.applications.find(a=>a.userId==='venue-b')!.id,host=e.applications.find(a=>a.kind==='host')!.id;
+ await expect(execute(env,e.id,{action:'review',applicationId:host,approved:true},user('bob'),'forbidden',e.version,()=>now)).rejects.toThrow('发布者');
+ await act('owner','select_time',{slotId:'sat'});expect(e.participants.filter(p=>p.status==='joined').map(p=>p.userId)).toEqual(['owner','alice','bob']);expect(e.participants.find(p=>p.userId==='carol')!.status).toBe('waitlisted');expect(e.participants.find(p=>p.userId==='dave')!.status).toBe('left');
+ await act('owner','review',{applicationId:venueA,approved:true});await act('owner','review',{applicationId:host,approved:true});note('确认周六、场地 A、主持人 Alice');
+ now=rules.recruitmentDeadline;e=await advance(env,e.id,()=>now);expect(e.status).toBe('confirmed');note('截止成行');
+ now+=1000;await act('bob','leave');expect(e.participants.find(p=>p.userId==='carol')!.status).toBe('joined');expect(e.status).toBe('confirmed');note('Bob 退出，Carol 自动递补');
+ await act('venue-a','withdraw',{applicationId:venueA});expect(e.status).toBe('repairing');expect(e.repairs.map(r=>r.key)).toEqual(['venue']);note('场地 A 撤回，进入补齐倒计时');
+ now+=60000;await act('owner','review',{applicationId:venueB,approved:true});expect(e.status).toBe('confirmed');expect(e.repairs).toHaveLength(0);note('确认备用场地 B，恢复成行');
+ const view=await project(env,e,user('owner'));expect(view.myParticipation).toMatchObject({status:'joined',availableSlotIds:['sat','sun']});
+ now=e.rules.endsAt;e=await advance(env,e.id,()=>now);expect(e.status).toBe('completed');note('活动结束');
+ const notices=await env.DB.prepare('SELECT subject,user_id FROM outbox').all<{subject:string,user_id:string}>();expect(notices.results.some(n=>n.subject==='候补已入选'&&n.user_id==='carol')).toBe(true);expect(notices.results.some(n=>n.subject==='活动等待补齐')).toBe(true);
+ console.log('\n'+steps.join('\n')+'\n通知仅写入隔离 outbox，共 '+notices.results.length+' 条。');
+});
