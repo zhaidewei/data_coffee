@@ -1,15 +1,14 @@
 import type {Env,User} from './types';
 import {fail,textValue} from './engine';
 import {advance,execute,project} from './store';
+import {body} from './http';
 
 export async function handleAI(request:Request,env:Env,user:User|null):Promise<Response|null>{
   const path=new URL(request.url).pathname;
   if(path!=='/api/ai'&&path!=='/api/ai/confirm')return null;
   if(request.method!=='POST')fail('请求方法不支持',405);
   if(!user)fail('请先登录后使用助理',401);
-  let b:Record<string,unknown>;
-  try{const raw=await request.text();if(raw.length>8000)fail('消息过长');b=JSON.parse(raw);}catch{fail('请求格式错误');}
-  if(!b!||typeof b!=='object')fail('请求格式错误');
+  const b=await body(request,8000);
   if(path==='/api/ai/confirm'){
     const id=textValue(b!.proposalId,'操作确认标识',100);
     const p=await env.DB.prepare('SELECT * FROM ai_proposals WHERE id=? AND user_id=?').bind(id,user!.id).first<{id:string;event_id:string;action:string;version:number;expires_at:number}>();

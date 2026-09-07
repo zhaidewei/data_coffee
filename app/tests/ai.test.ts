@@ -42,6 +42,16 @@ async function propose(eventId:string,actor=member){
 const confirm=(proposalId:string,actor=member)=>handleAI(req('/api/ai/confirm',{proposalId}),env,actor);
 async function count(table:string){return (await env.DB.prepare(`SELECT COUNT(*) n FROM ${table}`).first<{n:number}>())!.n;}
 describe('AI confirmation boundaries',()=>{
+  it.each(['/api/ai','/api/ai/confirm'])('rejects and cancels an oversized stream before database or provider work: %s',async(path)=>{
+    const cancel=vi.fn();let reads=0;
+    const stream=new ReadableStream({pull(controller){reads++;controller.enqueue(new Uint8Array(5000));},cancel});
+    const request=new Request(`https://example.test${path}`,{method:'POST',headers:{'Content-Type':'application/json'},body:stream,duplex:'half'} as RequestInit);
+    expect(request.headers.has('Content-Length')).toBe(false);
+    // No DB binding: rejection must happen before any database work.
+    await expect(handleAI(request,{} as Env,member)).rejects.toMatchObject({status:413});
+    expect(cancel).toHaveBeenCalledTimes(1);expect(reads).toBeLessThanOrEqual(3);
+    expect(fetch).not.toHaveBeenCalled();
+  });
   it('unconfigured AI does not call the provider, create proposals, or settle activity state',async()=>{
     const e=await published(); const expired={...e,rules:{...e.rules,recruitmentDeadline:Date.now()-1}};
     await env.DB.prepare('UPDATE activities SET document=? WHERE id=?').bind(JSON.stringify(expired),e.id).run();

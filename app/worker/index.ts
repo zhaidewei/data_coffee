@@ -4,17 +4,10 @@ import {advance,deleteDraft,execute,insertActivity,project,tick} from './store';
 import {currentUser,handleAuth,handleTokens} from './auth';
 import {drainMail} from './mail';
 import {handleAI} from './ai';
+import {body} from './http';
+export {body} from './http';
 
 const json=(data:unknown,status=200)=>Response.json(data,{status});
-export async function body(request:Request):Promise<Record<string,unknown>>{
-  if(!request.headers.get('content-type')?.includes('application/json'))fail('请使用 JSON 请求',415);
-  const reader=request.body?.getReader();if(!reader)fail('请求内容为空');
-  const parts:Uint8Array[]=[];let size=0;
-  while(true){const {done,value}=await reader.read();if(done)break;size+=value.byteLength;if(size>32000){await reader.cancel();fail('请求过大',413);}parts.push(value);}
-  const bytes=new Uint8Array(size);let offset=0;for(const p of parts){bytes.set(p,offset);offset+=p.length;}
-  const raw=new TextDecoder().decode(bytes);
-  try{const b=JSON.parse(raw);if(!b||typeof b!=='object'||Array.isArray(b))fail('请求格式错误');return b;}catch{fail('请求格式错误');}
-}
 export default {
   async fetch(request:Request,env:Env):Promise<Response>{
     const url=new URL(request.url);
@@ -37,7 +30,7 @@ export default {
         const ai=url.pathname.startsWith('/api/ai')?await handleAI(request,context,user):null;
         if(ai)res=ai;
         else if(url.pathname==='/api/events'&&request.method==='GET'){
-          const rows=await env.DB.prepare('SELECT id FROM activities ORDER BY created_at DESC LIMIT 200').all<{id:string}>();
+          const rows=await env.DB.prepare("SELECT id FROM activities WHERE json_extract(document,'$.status')!='draft' OR json_extract(document,'$.ownerId')=? ORDER BY created_at DESC LIMIT 200").bind(user?.id??null).all<{id:string}>();
           const events=[];
           for(const row of rows.results){const e=await advance(context,row.id);if(e.status!=='draft'||e.ownerId===user?.id)events.push(await project(context,e,user,true));}
           res=json({events,user:user?{id:user.id,nickname:user.nickname,publicNickname:user.publicNickname}:null});

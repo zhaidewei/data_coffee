@@ -33,15 +33,15 @@ node cli/dc-flow.mjs events action EVENT_ID publish --version 0 --key publish-un
 
 邮箱登录保留作为备用：`auth request --data ...` 的 JSON 为 `{email}`，该命令会向目标服务请求真实验证码；`auth verify --data -` 接收 `{email,code,nickname}`。普通验证输出只含用户；显式 `--session-only` 输出 `{sessionToken}` 供管道捕获。会话仅经 `DATA_COFFEE_SESSION` 或 `--session-stdin` 注入；后者接收原始 token 或该 JSON。使用本地 `secret` CLI 在调用点读取并通过管道注入，不把会话、验证码写进命令参数、文档或文件。认证请求体优先 stdin，不能同时让会话和请求体占用 stdin。CLI 不保存会话。`auth me` 查询本人；`auth logout` 注销当前会话。
 
-成功输出为 stdout JSON；错误为 stderr JSON。退出码：0 成功，1 网络或 API 错误，2 参数错误，3 认证/权限错误，4 版本冲突。请求超时 30 秒，拒绝 HTTP 重定向。活动列表遵循服务端当前最多 200 条及草稿可见性规则；当前没有分页、删除活动、自动登录刷新。测试通过 mock HTTP 验证参数和错误通道，不发送真实邮件。
+成功输出为 stdout JSON；错误为 stderr JSON。退出码：0 成功，1 网络或 API 错误，2 参数错误，3 认证/权限错误，4 版本冲突。请求超时 30 秒，拒绝 HTTP 重定向。活动列表遵循服务端当前最多 200 条及草稿可见性规则；当前没有分页、删除已发布活动、自动登录刷新。测试通过 mock HTTP 验证参数和错误通道，不发送真实邮件。
 
 ## 云端开发环境准备
 
-开发网址使用 Workers 提供的 workers.dev 地址。`wrangler.jsonc` 的 D1 ID 当前是占位符，不能当作已配置环境。需在目标 Cloudflare 账号创建独立开发数据库，将真实 ID 写入绑定，再执行远程迁移和部署。`APP_URL` 配置为实际 HTTPS 地址。
+当前测试环境为 https://data-coffee-dev.dewei-zhai.workers.dev ，`wrangler.jsonc` 已绑定对应的独立 D1 数据库。迁移 0001–0003 已应用。另建环境时需创建自己的数据库并替换绑定及 `APP_URL`，再执行迁移和部署。
 
-发信配置：`EMAIL_FROM` 必须是已在 Brevo 验证的 zhaidewei.com 邮箱，`EMAIL_FROM_NAME` 可为 Data Coffee。`BREVO_API_KEY` 和 `DEEPSEEK_API_KEY` 使用 Worker secrets；通过本地 secret CLI 在使用点读取后直接管道注入，不写入仓库、.dev.vars 或文档。`DEEPSEEK_MODEL` 可覆盖默认模型。
+发信配置：`EMAIL_FROM` 使用已在 Brevo 验证的发件人；当前测试环境使用配置中的 Gmail 发件地址，`EMAIL_FROM_NAME` 可为 Data Coffee。`BREVO_API_KEY` 和 `DEEPSEEK_API_KEY` 使用 Worker secrets；通过本地 secret CLI 在使用点读取后直接管道注入，不写入仓库、.dev.vars 或文档。`DEEPSEEK_MODEL` 可覆盖默认模型。
 
-未配置 Brevo 的云端登录返回明确错误，不提供测试验证码；未配置 DeepSeek 时普通按钮仍可用。当前尚未执行云端部署或真实邮件/模型验收。
+未配置 Brevo 的云端登录返回明确错误，不提供测试验证码；未配置 DeepSeek 时普通按钮仍可用。当前已部署云端测试环境，用户已确认收到验证码并成功登录；这不代表邮件容量、全部通知路径或模型功能已完成验收。
 
 ## 维护与故障定位
 

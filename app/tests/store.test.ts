@@ -3,6 +3,7 @@ import {Miniflare,convertV4MiniflareOptions} from 'miniflare';
 import {readFileSync} from 'node:fs';
 import {deleteDraft,execute,insertActivity,load,project,advance} from '../worker/store';
 import type {Env,Rules,User} from '../worker/types';
+import worker from '../worker/index';
 let mf:Miniflare,env:Env;
 const user=(id:string):User=>({id,email:`${id}@test.invalid`,nickname:id,publicNickname:false});
 const base=():Rules=>{const t=Date.now();return {minPeople:3,maxPeople:3,waitlist:true,recruitmentDeadline:t+3600000,startsAt:t+7200000,endsAt:t+10800000,registrationDeadline:t+6900000,promotionDeadline:t+6900000,repairMinutes:10,venueRequired:false,minTalks:0,minCohosts:0,minHosts:0,allowRoleOverlap:true,continuousVenue:true,continuousTalks:true,continuousCohosts:true,continuousHosts:true,addressVisibility:'participants'};};
@@ -11,6 +12,18 @@ afterAll(async()=>{await mf?.dispose();});
 beforeEach(async()=>{for(const table of ['activities','audit','outbox','users'])await env.DB.prepare(`DELETE FROM ${table}`).run();});
 async function published(){const e=await insertActivity(env,{title:'测试',city:'Amsterdam',description:'',rules:base()},user('owner'));return execute(env,e.id,{action:'publish'},user('owner'),'pub');}
 describe('D1事务与公开投影',()=>{
+ it('其他用户的200个新草稿不会挤掉公开活动列表',async()=>{
+   const e=await published();
+   const draft=await insertActivity(env,{title:'私有草稿',city:'Amsterdam',rules:base()},user('another'));
+   await env.DB.batch(Array.from({length:199},(_,i)=>{
+     const id=`private-draft-${i}`;
+     return env.DB.prepare('INSERT INTO activities(id,version,document,commit_id,next_due,created_at) VALUES(?,?,?,?,?,?)').bind(id,0,JSON.stringify({...draft,id}),id,null,draft.createdAt+i+1);
+   }));
+   const response=await worker.fetch(new Request('https://test.invalid/api/events'),env);
+   expect(response.status).toBe(200);
+   const data=await response.json() as {events:{id:string}[]};
+   expect(data.events.map(item=>item.id)).toEqual([e.id]);
+ });
  it('并发抢名额不超额，幂等不重复审计',async()=>{const e=await published();await Promise.all(Array.from({length:8},(_,i)=>execute(env,e.id,{action:'join'},user(`u${i}`),`join-${i}`)));const after=await load(env,e.id);expect(after.participants.filter(p=>p.status==='joined')).toHaveLength(3);expect(after.participants.filter(p=>p.status==='waitlisted')).toHaveLength(5);await execute(env,e.id,{action:'join'},user('u0'),'join-0',0);expect((await load(env,e.id)).version).toBe(after.version);const audit=await env.DB.prepare('SELECT count(*) n FROM audit WHERE event_id=?').bind(e.id).first<{n:number}>();expect(audit!.n).toBe(10);});
  it('并发退出只向每位入选者通知一次',async()=>{const e=await published();for(const id of ['a','b','support','c','d'])await execute(env,e.id,{action:'join'},user(id),`j${id}`);await Promise.all(['a','b'].map(id=>execute(env,e.id,{action:'leave'},user(id),`l${id}`)));const out=await env.DB.prepare("SELECT user_id FROM outbox WHERE subject='候补已入选'").all<{user_id:string}>();expect(out.results.map(r=>r.user_id).sort()).toEqual(['c','d']);});
  it('晚报名不能改变截止判定',async()=>{const e=await published();await expect(execute(env,e.id,{action:'join'},user('late'),'late',undefined,()=>e.rules.recruitmentDeadline+1)).rejects.toThrow();expect((await load(env,e.id)).status).toBe('cancelled');expect((await load(env,e.id)).participants).toHaveLength(0);});
