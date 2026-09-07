@@ -50,3 +50,12 @@ describe('删除草稿',()=>{
   else{expect(actions.results[0].action).toBe('publish');expect((await load(env,e.id)).status).toBe('recruiting');}
  });
 });
+
+it('发布人昵称遵循公开设置，不返回邮箱',async()=>{
+ const e=await published();
+ await env.DB.prepare('INSERT INTO users(id,email,nickname,public_nickname) VALUES(?,?,?,?)').bind('owner','owner-private@example.com','咖啡发起人',0).run();
+ expect((await project(env,e,null)).publisher).toEqual({nickname:'匿名成员'});
+ expect((await project(env,e,user('owner'))).publisher).toEqual({nickname:'咖啡发起人'});
+ await env.DB.prepare('UPDATE users SET public_nickname=1 WHERE id=?').bind('owner').run();
+ const view=await project(env,e,null);expect(view.publisher).toEqual({nickname:'咖啡发起人'});expect(JSON.stringify(view)).not.toContain('owner-private@example.com');
+});
