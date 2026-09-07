@@ -3,12 +3,14 @@ import {applyCommand,createActivity,reconcile} from '../worker/engine';
 import type {Activity,Command,Notice,Rules} from '../worker/types';
 
 const t=Date.UTC(2026,8,5,10);
-const rules:Rules={minPeople:1,maxPeople:1,waitlist:true,recruitmentDeadline:t+3600000,startsAt:t+7200000,endsAt:t+10800000,registrationDeadline:t+6900000,promotionDeadline:t+6900000,repairMinutes:10,venueRequired:false,minTalks:0,minCohosts:0,minHosts:0,allowRoleOverlap:true,continuousVenue:true,continuousTalks:true,continuousCohosts:true,continuousHosts:true,addressVisibility:'participants'};
+const rules:Rules={minPeople:3,maxPeople:3,waitlist:true,recruitmentDeadline:t+3600000,startsAt:t+7200000,endsAt:t+10800000,registrationDeadline:t+6900000,promotionDeadline:t+6900000,repairMinutes:10,venueRequired:false,minTalks:0,minCohosts:0,minHosts:0,allowRoleOverlap:true,continuousVenue:true,continuousTalks:true,continuousCohosts:true,continuousHosts:true,addressVisibility:'participants'};
 function act(e:Activity,cmd:Command,userId:string,at:number){const out:Notice[]=[];reconcile(e,at,out);applyCommand(e,cmd,userId,at,out);return out;}
 function event(){
   const e=createActivity({title:'回归活动',city:'Amsterdam',description:'第一版介绍',rules},'owner',t);
   act(e,{action:'publish'},'owner',t);
   act(e,{action:'join'},'member',t+1);
+  act(e,{action:'join'},'support-a',t+1);
+  act(e,{action:'join'},'support-b',t+1);
   act(e,{action:'join'},'waiting',t+2);
   return e;
 }
@@ -16,7 +18,7 @@ describe('独立评审回归',()=>{
   it('开始后发布者仍可紧急取消并通知成员',()=>{
     const e=event();const out=act(e,{action:'cancel',reason:'现场发生紧急情况'},'owner',rules.startsAt+1);
     expect(e.status).toBe('cancelled');expect(e.reason).toBe('现场发生紧急情况');
-    expect(out.filter(n=>n.subject==='活动已取消').map(n=>n.userId).sort()).toEqual(['member','owner','waiting']);
+    expect(out.filter(n=>n.subject==='活动已取消').map(n=>n.userId).sort()).toEqual(['member','owner','support-a','support-b','waiting']);
   });
   it('开始后取消仍仅允许发布者',()=>{
     const e=event();

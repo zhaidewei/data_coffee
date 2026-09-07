@@ -3,7 +3,7 @@ export function attachTimeValidation(form, parse){
   let active=false, sequence=0;
   function validate(){
     const errors=new Map();
-    const inputs=[...form.querySelectorAll('input[type="datetime-local"], .slot-batch input[type="time"]')];
+    const inputs=[...form.querySelectorAll('input[type="datetime-local"]')];
     const values=new Map();
     for(const input of inputs){
       if(!input.value){errors.set(input,'请填写完整的日期和时间。');continue;}
@@ -11,8 +11,6 @@ export function attachTimeValidation(form, parse){
       try{values.set(input,parse(input.value,input.closest('.time-row').querySelector('select')?.value));}
       catch{errors.set(input,'这个荷兰当地时间不存在，请避开夏令时切换跳过的时段。');}
     }
-    const batch=[...form.querySelectorAll('.slot-batch input[type="time"]')];
-    if(batch.length===2&&batch.every(i=>i.value)&&batch[1].value<=batch[0].value)errors.set(batch[1],'结束时间必须晚于开始时间；跨日活动请在下方逐日设置结束日期。');
     const starts=[];
     for(const row of form.querySelectorAll('.slot-editor-row')){
       const [start,end]=row.querySelectorAll('input');
@@ -21,6 +19,7 @@ export function attachTimeValidation(form, parse){
     }
     const first=starts.length?Math.min(...starts):null;
     const recruitment=form.elements.namedItem('recruitmentDeadline');
+    if(values.has(recruitment)&&values.get(recruitment)<=Date.now())errors.set(recruitment,'成行决定期限必须晚于当前时间。');
     if(first!==null&&values.has(recruitment)&&values.get(recruitment)>=first)errors.set(recruitment,'成行决定期限必须早于最早候选时段的开始时间。');
     for(const name of ['registrationDeadline','promotionDeadline']){
       const input=form.elements.namedItem(name),v=values.get(input);

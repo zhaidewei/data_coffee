@@ -8,7 +8,7 @@ let mf: Miniflare, env: Env;
 const user = (id: string): User => ({ id, email: `${id}@test.invalid`, nickname: id, publicNickname: false });
 const member = user('member'), owner = user('owner');
 const rules = (): Rules => { const now=Date.now(); return {
-  minPeople: 1, maxPeople: 2, waitlist: true, recruitmentDeadline: now+3600000,
+  minPeople: 3, maxPeople: 3, waitlist: true, recruitmentDeadline: now+3600000,
   startsAt: now+7200000, endsAt: now+10800000, registrationDeadline: now+6900000,
   promotionDeadline: now+6900000, repairMinutes: 10, venueRequired: false,
   minTalks: 0, minCohosts: 0, minHosts: 0, allowRoleOverlap: true, continuousVenue: true,
