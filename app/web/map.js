@@ -63,7 +63,7 @@ export async function mountMap(container,events,selectedCity,onSelect) {
     L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,noWrap:true,attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'}).on('tileerror',()=>{issues.add('底图暂不可用；已加载的省界和城市仍可操作。');update();}).addTo(map);
     map.attributionControl.addAttribution('省界与地名：<a href="https://www.pdok.nl/">PDOK / Kadaster</a> · <a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a>');
     const boundaries=fetch(new URL('data/nl-provinces.geojson',root),{signal:controller.signal}).then(r=>{if(!r.ok)throw new Error();return r.json();}).then(data=>{if(!alive())return;L.geoJSON(data,{interactive:false,style:{color:'#49716c',weight:1.4,fillColor:'#b6d3bb',fillOpacity:.09},onEachFeature:(feature,layer)=>{layer.bindTooltip(feature.properties.naam,{className:'province-label',direction:'center',permanent:true});}}).addTo(map);}).catch(()=>{if(alive()){issues.add('省界加载失败，可继续通过城市选择活动。');update();}});
-    const cities=[...new Set([...Object.keys(fallback),...events.map(e=>e.city).filter(Boolean)])];
+    const cities=[...new Set(events.map(e=>e.city).filter(Boolean))];
     await Promise.all(cities.map(async city=>{
       const place=await locate(city,controller.signal);if(!alive())return;
       if(place.error){issues.add(place.error);update();return;}
