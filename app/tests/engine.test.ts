@@ -148,3 +148,6 @@ describe('候补邀请的容量与提前过期边界',()=>{
   expect(()=>act(e,'join','e',e.rules.startsAt)).toThrow('活动已开始');
  });
 });
+
+it('同一人可提交多个容量待确认的候选场地，确认时补容量',()=>{const e=event();for(const address of ['地址A','地址B'])act(e,'apply','owner',t+1000,{kind:'venue',title:address,address});expect(e.applications).toHaveLength(2);expect(e.applications[0].capacity).toBeUndefined();expect(()=>act(e,'review','owner',t+2000,{applicationId:e.applications[0].id,approved:true})).toThrow('实际可容纳人数');act(e,'review','owner',t+3000,{applicationId:e.applications[0].id,approved:true,capacity:8});expect(e.applications[0].capacity).toBe(8);expect(e.applications[1].status).toBe('pending');expect(()=>act(e,'apply','owner',t+4000,{kind:'venue',title:'重复',address:'地址B'})).toThrow('已提交');});
+it('候选场地容量如提供则必须有效',()=>{for(const capacity of [0,-1,1.5,null])expect(()=>act(event(),'apply','owner',t+1000,{kind:'venue',title:'咖啡厅',address:'地址',capacity})).toThrow('容量');});

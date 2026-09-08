@@ -1,9 +1,11 @@
 #!/usr/bin/env node
+import {monthlyTemplate} from './template.mjs';
 import {readFile,realpath} from 'node:fs/promises';
 import {pathToFileURL} from 'node:url';
 
 export const help = `Data Coffee CLI（Node.js 22+）
 用法：dc-flow <命令> [选项]
+  events template --data <JSON|@文件|->    本地生成指定月份周日草稿，不发布
   events list
   events get <id>
   events create --data <JSON|@文件|->       创建草稿
@@ -20,6 +22,8 @@ export const help = `Data Coffee CLI（Node.js 22+）
       --help
 action：edit describe publish select_time join leave apply review withdraw revoke cancel
 成功 stdout JSON；错误 stderr JSON。退出码：0成功，1网络/服务端，2输入，3认证/权限，4冲突。
+template 输入：{title,city,month:"2026-09",start:"13:00",durationMinutes:150,minPeople:4,maxPeople:8,description,tags}。
+输出 {event,skippedDates}；将 event 交给 events create，预览后 action publish。过往周日自动跳过。
 请求不自动重试。create API 不支持幂等；action 重试必须复用 --key 和原始参数。`;
 
 class CliError extends Error {constructor(message,exitCode=2,status){super(message);this.exitCode=exitCode;this.status=status;}}
@@ -39,6 +43,11 @@ export async function run(argv, io={}) {
       opts[arg]=argv[++i];
     }
     const [group,command,id,action]=pos;
+    if(group==='events'&&command==='template'&&pos.length===2){
+      if(!opts['--data']||Object.keys(opts).some(k=>k!=='--data'))throw new CliError('template 仅接受 --data');
+      const source=opts['--data'];let input;try{input=JSON.parse(source==='-'?await stdin():source.startsWith('@')?await readFile(source.slice(1),'utf8'):source);if(!input||typeof input!=='object'||Array.isArray(input))throw Error();}catch{throw new CliError('模板须为 JSON 对象');}
+      try{out(JSON.stringify(monthlyTemplate(input,io.now??Date.now()))+'\n');return 0;}catch(e){throw new CliError(e.message);}
+    }
     let path,method='GET',payload;
     if(group==='events'&&command==='list'&&pos.length===2)path='/api/events';
     else if(group==='events'&&command==='get'&&pos.length===3)path=`/api/events/${id}`;

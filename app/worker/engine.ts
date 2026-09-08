@@ -213,10 +213,10 @@ export function applyCommand(e:Activity,cmd:Command,userId:string,now:number,out
       const kind=cmd.kind as Application['kind'];
       if(['cohost','talk'].includes(kind))fail('MVP 暂不支持分享和协办申请');
       if(!['cohost','host','talk','venue','material','pledge'].includes(kind))fail('申请类型无效');
-      if(e.applications.filter(a=>a.userId===userId&&a.kind===kind&&a.status!=='withdrawn'&&a.status!=='rejected').length)fail('已有同类型申请，请先撤回再提交',409);
+      if(kind!=='venue'&&e.applications.filter(a=>a.userId===userId&&a.kind===kind&&a.status!=='withdrawn'&&a.status!=='rejected').length)fail('已有同类型申请，请先撤回再提交',409);
       if(e.applications.length>=1000)fail('本场申请记录已达上限');
       const a:Application={id:crypto.randomUUID(),userId,kind,title:textValue(cmd.title,'申请标题',120),detail:textValue(cmd.detail??'','申请说明',2000,0),status:'pending',updatedAt:now};
-      if(kind==='venue'){if(!Number.isInteger(cmd.capacity)||Number(cmd.capacity)<1||Number(cmd.capacity)>10000)fail('请填写有效场地容量');a.capacity=Number(cmd.capacity);a.address=textValue(cmd.address,'详细地址',400);}
+      if(kind==='venue'){if(cmd.capacity!==undefined){if(!Number.isInteger(cmd.capacity)||Number(cmd.capacity)<1||Number(cmd.capacity)>10000)fail('请填写有效场地容量');a.capacity=Number(cmd.capacity);}a.address=textValue(cmd.address,'详细地址',400);if(e.applications.some(v=>v.kind==='venue'&&v.userId===userId&&!['withdrawn','rejected'].includes(v.status)&&v.address?.trim().toLowerCase()===a.address?.toLowerCase()))fail('你已提交这个候选场地',409);}
       if(kind==='pledge'){if(typeof cmd.amount!=='number'||!Number.isFinite(cmd.amount)||cmd.amount<1||cmd.amount>100000)fail('请填写有效赞助意向金额');a.amount=cmd.amount;}
       if(kind==='talk'){if(!Number.isInteger(cmd.duration)||Number(cmd.duration)<1||Number(cmd.duration)>180)fail('分享时长须为1–180分钟');a.duration=Number(cmd.duration);}
       e.applications.push(a);
@@ -229,7 +229,7 @@ export function applyCommand(e:Activity,cmd:Command,userId:string,now:number,out
       if(['cohost','venue','host'].includes(a.kind))owner(e,userId);else manager(e,userId);
       if(a.status!=='pending')fail('申请已处理或撤回',409);
       if(typeof cmd.approved!=='boolean')fail('请选择批准或拒绝');
-      if(a.kind==='venue'&&cmd.approved){for(const other of e.applications)if(other.kind==='venue'&&other.status==='approved'&&other.id!==a.id){other.status='pending';other.updatedAt=now;other.reviewedBy=userId;other.reason='已选择其他最终场地，本提议保留备用';out.push({userId:other.userId,subject:'场地已转为备用',text:`「${e.title}」已确认其他场地，你提供的「${other.title}」保留备用，无需按最终场地继续准备。`});}}
+      if(a.kind==='venue'&&cmd.approved){const capacity=cmd.capacity??a.capacity;if(!Number.isInteger(capacity)||Number(capacity)<1||Number(capacity)>10000)fail('确认场地前请填写实际可容纳人数');a.capacity=Number(capacity);for(const other of e.applications)if(other.kind==='venue'&&other.status==='approved'&&other.id!==a.id){other.status='pending';other.updatedAt=now;other.reviewedBy=userId;other.reason='已选择其他最终场地，本提议保留备用';out.push({userId:other.userId,subject:'场地已转为备用',text:`「${e.title}」已确认其他场地，你提供的「${other.title}」保留备用，无需按最终场地继续准备。`});}}
       a.status=cmd.approved?'approved':'rejected';a.reviewedBy=userId;a.reason=textValue(cmd.reason??'','审核说明',500,0);a.updatedAt=now;
       out.push({userId:a.userId,subject:'申请审批结果',text:`你在「${e.title}」的申请已${cmd.approved?'通过':'拒绝'}。${a.reason}`});break;
     }
