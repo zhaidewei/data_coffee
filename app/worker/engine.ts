@@ -33,7 +33,19 @@ export function validateRules(input: unknown, now: number): Rules {
   return Object.fromEntries([...ints.map(x=>x[0]), 'recruitmentDeadline','startsAt','endsAt','registrationDeadline','promotionDeadline','waitlist','venueRequired','allowRoleOverlap','continuousVenue','continuousTalks','continuousCohosts','continuousHosts','addressVisibility',...(r.timeSlots?['timeSlots']:[])].map(k => [k,(r as any)[k]])) as unknown as Rules;
 }
 export function createActivity(input: Record<string,unknown>, ownerId: string, now: number, id = crypto.randomUUID()): Activity {
-  return {id,ownerId,title:textValue(input.title,'标题',100),city:textValue(input.city,'城市',80),description:textValue(input.description??'','介绍',4000,0),rules:validateRules(input.rules,now),status:'draft',version:0,createdAt:now,participants:[],applications:[],repairs:[],receipts:[],sequence:0,processed:[]};
+  return {id,ownerId,tags:normalizeTags(input.tags),title:textValue(input.title,'标题',100),city:textValue(input.city,'城市',80),description:textValue(input.description??'','介绍',4000,0),rules:validateRules(input.rules,now),status:'draft',version:0,createdAt:now,participants:[],applications:[],repairs:[],receipts:[],sequence:0,processed:[]};
+}
+export function normalizeTags(input:unknown):string[]{
+  if(input===undefined)return [];
+  if(!Array.isArray(input)||input.length>5)fail('最多选择 5 个标签');
+  const unique=new Map<string,string>();
+  for(const value of input){
+    if(typeof value!=='string')fail('标签须为文字');
+    const label=(value as string).normalize('NFKC').trim().replace(/\s+/g,' ');
+    if(!label||label.length>20||/[\u0000-\u001f\u007f<>]/.test(label))fail('标签须为 1–20 字符，不含控制符或尖括号');
+    unique.set(label.toLowerCase(),label);
+  }
+  return [...unique.values()];
 }
 export const joined = (e: Activity) => e.participants.filter(p=>p.status==='joined');
 export const isManager = (e: Activity, userId: string) => userId===e.ownerId;
@@ -105,12 +117,13 @@ export function applyCommand(e:Activity,cmd:Command,userId:string,now:number,out
   switch(cmd.action) {
     case 'edit': {
       owner(e,userId);if(e.status!=='draft')fail('发布后规则已锁定',409);
-      const edited=createActivity(cmd,userId,now,e.id);e.title=edited.title;e.city=edited.city;e.description=edited.description;e.rules=edited.rules;break;
+      const edited=createActivity(cmd,userId,now,e.id);e.title=edited.title;e.city=edited.city;e.description=edited.description;e.tags=cmd.tags===undefined?(e.tags||[]):edited.tags;e.rules=edited.rules;break;
     }
     case 'describe': {
       owner(e,userId);
       const before=e.description,after=textValue(cmd.description,'介绍',4000,0);
       e.description=after;
+      if(cmd.tags!==undefined)e.tags=normalizeTags(cmd.tags);
       e.receipts.push({at:now,kind:'description',conditions:conditions(e),reason:'介绍文字已更正，成团规则保持不变',descriptionChange:{before,after}});
       break;
     }
@@ -170,6 +183,15 @@ export function applyCommand(e:Activity,cmd:Command,userId:string,now:number,out
     }
     case 'leave': {
       const p=e.participants.find(p=>p.userId===userId);if(p)p.status='left';promote(e,now,out);break;
+    }
+    case 'reply_registration': {
+      owner(e,userId);
+      const p=e.participants.find(p=>p.userId===cmd.participantId&&p.status!=='left');
+      if(!p)fail('报名成员不存在',404);
+      p.registrationReply=textValue(cmd.reply,'回复',500);
+      p.registrationRepliedAt=now;
+      out.push({userId:p.userId,subject:'发起人回复了你的报名留言',text:`「${e.title}」的发起人回复：${p.registrationReply}`});
+      break;
     }
     case 'apply': {
       if(e.status==='draft')fail('发布征集后才能申请',409);

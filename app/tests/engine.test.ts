@@ -1,5 +1,5 @@
 import {describe,it,expect} from 'vitest';
-import {applyCommand,conditions,createActivity,reconcile,isManager} from '../worker/engine';
+import {applyCommand,conditions,createActivity,normalizeTags,reconcile,isManager} from '../worker/engine';
 import type {Activity,Notice,Rules} from '../worker/types';
 const t=Date.UTC(2026,8,5,10);
 const rules=(r:Partial<Rules>={}):Rules=>({minPeople:3,maxPeople:3,waitlist:true,recruitmentDeadline:t+3600000,startsAt:t+7200000,endsAt:t+10800000,registrationDeadline:t+6900000,promotionDeadline:t+6900000,repairMinutes:10,venueRequired:false,minTalks:0,minCohosts:0,minHosts:0,allowRoleOverlap:true,continuousVenue:true,continuousTalks:true,continuousCohosts:true,continuousHosts:true,addressVisibility:'participants',...r});
@@ -19,6 +19,8 @@ describe('确定性业务规则',()=>{
 
 it('交通多选与留言可更新清空，拒绝无效输入',()=>{const e=event();act(e,'join','a',t+1000,{transportPreferences:['public_transport','car'],registrationMessage:'大家好'});expect(e.participants[0]).toMatchObject({transportPreferences:['public_transport','car'],registrationMessage:'大家好'});act(e,'join','a',t+2000,{transportPreferences:[],registrationMessage:''});expect(e.participants[0]).toMatchObject({transportPreferences:[],registrationMessage:''});expect(()=>act(e,'join','a',t+3000,{transportPreferences:['plane']})).toThrow();expect(()=>act(e,'join','a',t+3000,{registrationMessage:'a'.repeat(501)})).toThrow();});
 
+it('只有发起人可以公开回复报名留言并通知成员',()=>{const e=event();act(e,'join','a',t+1000,{registrationMessage:'需要自带电脑吗？'});expect(()=>act(e,'reply_registration','b',t+2000,{participantId:'a',reply:'需要'})).toThrow('发布者');const out=act(e,'reply_registration','owner',t+3000,{participantId:'a',reply:'不用带，现场会准备。'});expect(e.participants[0]).toMatchObject({registrationReply:'不用带，现场会准备。',registrationRepliedAt:t+3000});expect(out).toContainEqual(expect.objectContaining({userId:'a',subject:'发起人回复了你的报名留言'}));expect(()=>act(e,'reply_registration','owner',t+4000,{participantId:'missing',reply:'回复'})).toThrow('不存在');expect(()=>act(e,'reply_registration','owner',t+4000,{participantId:'a',reply:'a'.repeat(501)})).toThrow();});
+
 const slots=[{id:'sat',startsAt:t+7200000,endsAt:t+10800000},{id:'sun',startsAt:t+86400000,endsAt:t+90000000}];
 it('时段投票不能替代最终确认，人数按最终时段计算',()=>{const e=event({timeSlots:slots});act(e,'join','a',t+1000,{availableSlotIds:['sat']});act(e,'join','b',t+1100,{availableSlotIds:['sun']});expect(conditions(e).find(c=>c.key==='people')?.current).toBe(0);expect(()=>act(e,'select_time','a',t+1200,{slotId:'sat'})).toThrow();act(e,'select_time','owner',t+1300,{slotId:'sun'});expect(e.rules.startsAt).toBe(slots[1].startsAt);expect(conditions(e).find(c=>c.key==='people')?.current).toBe(1);expect(e.participants[0].status).toBe('left');expect(()=>act(e,'select_time','owner',t+1400,{slotId:'sat'})).toThrow();reconcile(e,t+3600000,[]);expect(e.status).toBe('cancelled');});
 it('未确认时间即使投票充足仍取消',()=>{const e=event({timeSlots:slots});for(const u of ['a','b','c'])act(e,'join',u,t+1000,{availableSlotIds:['sat','sun']});reconcile(e,t+3600000,[]);expect(e.status).toBe('cancelled');});
@@ -36,3 +38,10 @@ describe('人数与主持人数边界',()=>{
  it.each([{minPeople:3,maxPeople:3,minHosts:0},{minPeople:100,maxPeople:100,minHosts:10}])('接受包含端点的合法规则 %j',r=>{expect(()=>event(r)).not.toThrow();});
  it.each([{minPeople:2},{minPeople:101,maxPeople:101},{maxPeople:2},{maxPeople:101},{minPeople:3.5,maxPeople:4},{maxPeople:3.5},{minHosts:-1},{minHosts:11},{minHosts:0.5},{minPeople:4,maxPeople:3}])('拒绝越界、小数或倒置规则 %j',r=>{expect(()=>event(r)).toThrow();});
 });
+
+it('规范化标签并拒绝无效输入',()=>{
+ expect(normalizeTags([' SQL ','sql','ＡＩ','数据  平台'])).toEqual(['sql','AI','数据 平台']);
+ expect(normalizeTags(undefined)).toEqual([]);
+ for(const value of ['SQL',[''],['<script>'],['a'.repeat(21)],Array(6).fill('a')])expect(()=>normalizeTags(value)).toThrow();
+});
+it('介绍更新可复用标签且不改变成行规则',()=>{const e=event(),before=structuredClone(e.rules);act(e,'describe','owner',t+1000,{description:'聊 AI',tags:['AI','ai','职场']});expect(e.tags).toEqual(['ai','职场']);expect(e.rules).toEqual(before);expect(()=>act(e,'describe','other',t+2000,{description:'改写',tags:['创业']})).toThrow();expect(e.tags).toEqual(['ai','职场']);act(e,'describe','owner',t+3000,{description:'继续聊'});expect(e.tags).toEqual(['ai','职场']);});

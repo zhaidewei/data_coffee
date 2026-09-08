@@ -29,6 +29,11 @@ export default {
         const context={...env,APP_URL:env.APP_URL||url.origin};
         const ai=url.pathname.startsWith('/api/ai')?await handleAI(request,context,user):null;
         if(ai)res=ai;
+        else if(url.pathname==='/api/tags'&&request.method==='GET'){
+          const query=(url.searchParams.get('q')||'').normalize('NFKC').trim().toLowerCase().slice(0,20);
+          const rows=await env.DB.prepare('SELECT label FROM tags WHERE instr(key,?)>0 ORDER BY key LIMIT 50').bind(query).all<{label:string}>();
+          res=json({tags:rows.results.map(row=>row.label)});
+        }
         else if(url.pathname==='/api/events'&&request.method==='GET'){
           const rows=await env.DB.prepare("SELECT id FROM activities WHERE json_extract(document,'$.status')!='draft' OR json_extract(document,'$.ownerId')=? ORDER BY created_at DESC LIMIT 200").bind(user?.id??null).all<{id:string}>();
           const events=[];

@@ -1,14 +1,16 @@
+import {cityCoffee,defaultCoffee} from './city-coffee.js';
 import {dagStatuses,dagStatusLabels} from './dag-status.js';
 import {attachTimeValidation} from './time-validation.js';
 import {renderCliDocs} from './cli-docs.js';
 import {mountMap} from './map.js';
 import {monthRange,eventSlots,filterEvents} from './overview.js';
+import qrcode from './vendor/qrcode/qrcode.mjs';
 const $ = (s, root = document) => root.querySelector(s);
 const app = $('#app');
-const state = {user:null, events:[], event:null, city:'全部',period:'all',from:monthRange('current').from,to:monthRange('current').to, loading:0, proposal:null, aiGeneration:0, detailVisible:false, pendingEvent:null, polling:false, aiReviewPending:false};
+const state = {user:null, events:[], event:null, city:'全部',selectedTag:'',period:'all',from:monthRange('current').from,to:monthRange('current').to, loading:0, proposal:null, aiGeneration:0, detailVisible:false, pendingEvent:null, polling:false, aiReviewPending:false};
 const statusNames = {draft:'草稿',recruiting:'正在征集',confirmed:'已成行',repairing:'条件补齐中',cancelled:'已取消',completed:'已结束',pending:'待审核',approved:'已通过',rejected:'未通过',withdrawn:'已撤回',joined:'已报名',waitlisted:'候补中',left:'已退出'};
 const kinds = {cohost:'协办',host:'现场负责人',talk:'主题分享',venue:'场地',material:'物资',pledge:'赞助'};
-const actions = {join:'报名',leave:'退出报名',apply:'提交申请',withdraw:'撤回申请',publish:'发布活动',cancel:'取消活动',review:'审核申请',revoke:'撤销批准',describe:'更正介绍',edit:'编辑草稿'};
+const actions = {join:'报名',leave:'退出报名',apply:'提交申请',withdraw:'撤回申请',publish:'发布活动',cancel:'取消活动',review:'审核申请',revoke:'撤销批准',describe:'更正介绍',edit:'编辑草稿',reply_registration:'回复报名留言'};
 function el(tag, props={}, ...children){const n=document.createElement(tag);for(const [k,v] of Object.entries(props)){if(k==='class')n.className=v;else if(k.startsWith('on'))n.addEventListener(k.slice(2),v);else if(k==='text')n.textContent=v;else if(v!==null&&v!==undefined){if(k in n)n[k]=v;else n.setAttribute(k,v);}}for(const c of children.flat(Infinity))if(c!==null&&c!==undefined)n.append(c instanceof Node?c:document.createTextNode(String(c)));return n;}
 const btn=(text,fn,cls='button')=>el('button',{type:'button',class:cls,onclick:fn},text);
 const badge=s=>el('span',{class:`badge ${s}`},statusNames[s]||s);
@@ -16,6 +18,90 @@ function toast(message){const n=$('#toast');n.textContent=message;n.style.displa
 function errorAt(root,error){root.querySelector('.error-box')?.remove();root.append(el('div',{class:'error-box',role:'alert'},error.message||String(error)));}
 async function api(path, body, method){let response;try{response=await fetch(path,{method:method||(body?'POST':'GET'),headers:body?{'Content-Type':'application/json',...(path.includes('/actions')||path==='/api/ai/confirm'?{'Idempotency-Key':crypto.randomUUID()}:{})}:{},body:body?JSON.stringify(body):undefined});}catch{throw new Error('网络连接失败，请检查网络后重试。');}let data;try{data=await response.json();}catch{throw new Error(`服务暂时无法响应（${response.status}），请稍后重试。`);}if(!response.ok){const detail=typeof data.error==='string'?data.error:data.error?.message||data.message||'请求失败';throw new Error(response.status===503?`服务尚未配置或暂时不可用：${detail}`:detail);}return data;}
 function date(ms,options={}){return new Intl.DateTimeFormat('zh-CN',{timeZone:'Europe/Amsterdam',month:'long',day:'numeric',hour:'2-digit',minute:'2-digit',...options}).format(new Date(ms));}
+function activityUrl(e){return new URL(`#event/${e.id}`,location.href).href;}
+function drawWrapped(ctx,text,x,y,maxWidth,lineHeight,maxLines=3){const chars=[...text];let line='',lines=[];for(const char of chars){const next=line+char;if(ctx.measureText(next).width>maxWidth&&line){lines.push(line);line=char;}else line=next;}if(line)lines.push(line);for(const [index,value] of lines.slice(0,maxLines).entries())ctx.fillText(index===maxLines-1&&lines.length>maxLines?value.slice(0,-1)+'…':value,x,y+index*lineHeight);return y+Math.min(lines.length,maxLines)*lineHeight;}
+function loadImage(src){return new Promise((resolve,reject)=>{const image=new Image();image.crossOrigin='anonymous';image.onload=()=>resolve(image);image.onerror=reject;image.src=src.startsWith('https://')?src+'?cors=1':src;});}
+function tagPicker(initial=[]){
+  let chosen=[...initial],sequence=0,timer;
+  const selected=el('div',{class:'tag-options'}),suggestions=el('div',{class:'tag-options'}),input=el('input',{type:'text',maxLength:20,placeholder:'搜索标签，或输入新标签','aria-label':'搜索或新建标签'});
+  const root=el('fieldset',{class:'tag-picker'},el('legend',{},'本场风味 · 主题标签'),selected,input,suggestions,el('small',{class:'muted'},'最多 5 个。新标签随活动保存，所有成员均可复用。'));
+  const normalize=value=>value.normalize('NFKC').trim().replace(/\s+/g,' ');
+  function add(value){const tag=normalize(value);if(!tag)return;if(tag.length>20||/[<>]/.test(tag)){toast('标签须为 1–20 字符，不含尖括号');return;}if(chosen.some(t=>t.toLowerCase()===tag.toLowerCase()))return;if(chosen.length>=5){toast('最多选择 5 个标签');return;}chosen.push(tag);input.value='';render();search();}
+  function render(){selected.replaceChildren(...chosen.map(tag=>btn(tag+' ×',()=>{chosen=chosen.filter(t=>t!==tag);render();search();},'button tag-chip')));}
+  async function search(){const current=++sequence;try{const data=await api('/api/tags?q='+encodeURIComponent(input.value));if(current!==sequence||!root.isConnected)return;const query=normalize(input.value),tags=data.tags.filter(t=>!chosen.some(s=>s.toLowerCase()===t.toLowerCase()));suggestions.replaceChildren(...tags.map(tag=>btn(tag,()=>add(tag),'button tag-chip')));if(query&&!data.tags.some(t=>t.toLowerCase()===query.toLowerCase())&&!chosen.some(t=>t.toLowerCase()===query.toLowerCase()))suggestions.append(btn('新建「'+query+'」',()=>add(query),'button tag-chip'));}catch{if(current===sequence)suggestions.replaceChildren(el('small',{},'标签库暂时不可用，仍可输入标签后按回车添加。'));}}
+  input.addEventListener('input',()=>{++sequence;clearTimeout(timer);timer=setTimeout(search,200);});input.addEventListener('keydown',event=>{if(event.key==='Enter'&&!event.isComposing){event.preventDefault();add(input.value);}});
+  render();setTimeout(search,0);return {root,read:()=>{const pending=normalize(input.value);if(pending){if(pending.length>20||/[\u0000-\u001f\u007f<>]/.test(pending))throw new Error('标签须为 1–20 字符，不含控制符或尖括号');if(chosen.length>=5&&!chosen.some(t=>t.toLowerCase()===pending.toLowerCase()))throw new Error('最多选择 5 个标签');add(pending);}return [...chosen];}};
+}
+function shareFlavors(e){
+  if(e.tags?.length)return e.tags.slice(0,3);
+  const text=`${e.title} ${e.description||''}`;
+  const topics=['数据平台','可观测性','数据工程','机器学习','人工智能','数据分析','职业发展','工作','生活','Airflow','DuckDB','Python','SQL'];
+  return topics.filter(topic=>text.toLowerCase().includes(topic.toLowerCase())).slice(0,3);
+}
+async function shareCard(e){
+  const canvas=document.createElement('canvas'),ctx=canvas.getContext('2d'),logo=await loadImage('/logo.svg');
+  const coffee=await loadImage(cityCoffee(e.city)).catch(()=>loadImage(defaultCoffee)).catch(()=>null);
+  const slots=e.rules.timeSlots||[],selected=slots.find(s=>s.id===e.selectedSlotId),flavors=shareFlavors(e);
+  const fmt=(ms,options)=>new Intl.DateTimeFormat('zh-CN',{timeZone:'Europe/Amsterdam',...options}).format(new Date(ms));
+  const days=[...new Set(slots.map(s=>fmt(s.startsAt,{year:'numeric',month:'numeric',day:'numeric'})))];
+  const groups=new Map();
+  for(const day of days){const [year,month,date]=day.split('/');const key=year+' 年 '+month+' 月';if(!groups.has(key))groups.set(key,[]);groups.get(key).push(date+' 日');}
+  // Lay out in CSS-sized units, then export at 3x. The same pass measures the paper height.
+  function paint(draw){
+    let y=60;
+    const label=(value,x,baseline,size=15,color='#50627a',weight=400)=>{
+      ctx.font=weight+' '+size+'px system-ui,sans-serif';ctx.textAlign='center';ctx.fillStyle=color;
+      if(draw)ctx.fillText(value,x,baseline);
+    };
+    const wrap=(value,size,width,weight=400)=>{
+      ctx.font=weight+' '+size+'px system-ui,sans-serif';
+      const lines=[];let line='';
+      for(const ch of value){if(line&&ctx.measureText(line+ch).width>width){lines.push(line);line=ch;}else line+=ch;}if(line)lines.push(line);return lines;
+    };
+    const rule=()=>{if(draw){ctx.strokeStyle='#bdc7c6';ctx.lineWidth=.8;ctx.setLineDash([2,3]);ctx.beginPath();ctx.moveTo(45,y);ctx.lineTo(385,y);ctx.stroke();ctx.setLineDash([]);}};
+    if(draw){
+      ctx.strokeStyle='#00a873';ctx.lineWidth=1.8;ctx.lineCap='round';ctx.lineJoin='round';
+      ctx.beginPath();ctx.moveTo(132,51);ctx.lineTo(132,62);ctx.quadraticCurveTo(132,69,139,69);ctx.quadraticCurveTo(146,69,146,62);ctx.lineTo(146,51);ctx.closePath();ctx.moveTo(146,53);ctx.bezierCurveTo(155,51,155,62,146,61);ctx.moveTo(130,73);ctx.lineTo(150,73);ctx.moveTo(136,46);ctx.lineTo(136,42);ctx.moveTo(142,46);ctx.lineTo(142,42);ctx.stroke();
+    }
+    label('DATA COFFEE',237,65,15,'#1769c2',600);y=113;
+    if(coffee){if(draw){ctx.save();ctx.beginPath();ctx.arc(345,64,27,0,Math.PI*2);ctx.clip();ctx.drawImage(coffee,coffee.width*.15,coffee.height*.15,coffee.width*.68,coffee.height*.68,318,37,54,54);ctx.restore();}}
+    const title=e.title.startsWith(e.city+' ')?[e.city,...wrap(e.title.slice(e.city.length+1),30,340,700)]:wrap(e.title,30,340,700);
+    for(const line of title){label(line,215,y,30,'#24364b',700);y+=39;}
+    y+=8;
+    if(flavors.length){label('本 场 风 味',215,y,11,'#708078');y+=25;label(flavors.join(' · '),215,y,16,'#496652',500);y+=28;}
+    else y+=10;
+    rule();y+=28;
+    for(const [x,name,value,width] of [[99,'城市',e.city,108],[229,'成行人数',e.rules.minPeople+' 人起 · 上限 '+e.rules.maxPeople+' 人',146],[351,'活动状态',statusNames[e.status]||e.status,70]]){
+      label(name,x,y,12,'#637386');
+      const lines=wrap(value,14,width,500);
+      lines.forEach((line,i)=>label(line,x,y+26+i*19,14,name==='活动状态'&&e.status==='recruiting'?'#078048':'#24364b',500));
+    }
+    y+=55;rule();y+=43;
+    label(selected?fmt(selected.startsAt,{month:'long',day:'numeric',weekday:'long'}):'日期待定',215,y,28,'#1769c2',650);y+=32;
+    if(selected){label(fmt(selected.startsAt,{year:'numeric'})+' · '+fmt(selected.startsAt,{hour:'2-digit',minute:'2-digit'})+'–'+fmt(selected.endsAt,{hour:'2-digit',minute:'2-digit'}),215,y,15);y+=29;label('时间已确认 · 成行状态以活动页面为准',215,y,12);y+=28;}
+    else{
+      for(const [month,dates] of groups){
+        label(month,215,y,14);y+=27;
+        for(let i=0;i<dates.length;i+=4){label(dates.slice(i,i+4).join('   /   '),215,y,19,'#50627a',500);y+=29;}
+      }
+      label(slots.length+' 个候选时段 · 扫码选择可参加时间',215,y,12);y+=27;
+    }
+    const qr=qrcode(0,'H');qr.addData(activityUrl(e));qr.make();
+    const count=qr.getModuleCount(),cell= Math.max(1,Math.floor(154*3/count))/3,size=count*cell,quiet=cell*4,top=y+quiet,left=(430-size)/2;
+    if(draw){ctx.fillStyle='#fff';ctx.fillRect(left-quiet,top-quiet,size+quiet*2,size+quiet*2);ctx.fillStyle='#17263a';for(let row=0;row<count;row++)for(let col=0;col<count;col++)if(qr.isDark(row,col))ctx.fillRect(left+col*cell,top+row*cell,cell,cell);const plate=size*.18,icon=plate*.72;ctx.fillStyle='#fff';ctx.fillRect(215-plate/2,top+size/2-plate/2,plate,plate);ctx.drawImage(logo,215-icon/2,top+size/2-icon/2,icon,icon);}
+    y=top+size+quiet+26;label(['completed','cancelled'].includes(e.status)?'扫码查看活动':'扫码查看活动 · 报名',215,y,16,'#24364b',600);y+=24;rule();y+=26;
+    label('由成员共同推进，满足成行规则后出发。',215,y,12,'#65776c');y+=21;
+    label('活动安排与状态以页面最新信息为准。',215,y,12,'#65776c');
+    return Math.ceil(y+48);
+  }
+  const height=paint(false);canvas.width=1290;canvas.height=height*3;ctx.scale(3,3);
+  ctx.fillStyle='#edf4fb';ctx.fillRect(0,0,430,height);ctx.fillStyle='#fffdf7';ctx.fillRect(15,12,400,height-36);ctx.fillStyle='#00b86b';ctx.fillRect(15,12,400,6);
+  paint(true);
+  ctx.fillStyle='#edf4fb';for(let x=15;x<415;x+=16){ctx.beginPath();ctx.moveTo(x,height-24);ctx.lineTo(x+8,height-32);ctx.lineTo(x+16,height-24);ctx.fill();}
+  return new Promise((resolve,reject)=>canvas.toBlob(blob=>blob?resolve(blob):reject(new Error('分享图生成失败')),'image/png'));
+}
+async function copyText(value){if(navigator.clipboard?.writeText)return navigator.clipboard.writeText(value);const input=el('textarea',{value});document.body.append(input);input.select();document.execCommand('copy');input.remove();}
+async function shareEvent(e){const url=activityUrl(e),actions=el('div',{class:'share-actions'}),content=el('div',{class:'share-dialog'},el('h2',{},'分享这场活动'),el('p',{class:'muted'},'把活动链接发给朋友，或分享带二维码的邀请图。'),el('div',{class:'share-preview loading'},'正在生成分享图…'),actions);modal(content);try{const blob=await shareCard(e),objectUrl=URL.createObjectURL(blob),preview=el('img',{src:objectUrl,alt:`${e.title}活动分享图，包含二维码`}),file=new File([blob],`data-coffee-${e.id}.png`,{type:'image/png'}),canShareImage=Boolean(navigator.share&&navigator.canShare?.({files:[file]}));content.querySelector('.share-preview').replaceChildren(preview);const linkAction=navigator.share?btn('分享活动链接',()=>navigator.share({title:e.title,text:`${e.title} · ${e.city}`,url}).catch(error=>{if(error.name!=='AbortError')toast(error.message);})) : btn('复制活动链接',async()=>{await copyText(url);toast('活动链接已复制');});const imageAction=canShareImage?btn('分享二维码图片',()=>navigator.share({files:[file],title:e.title,text:`${e.title} · ${e.city}`}).catch(error=>{if(error.name!=='AbortError')toast(error.message);}), 'button dark') : el('a',{class:'button dark',href:objectUrl,download:file.name},'下载二维码图片');actions.append(linkAction,imageAction);$('#modal').addEventListener('close',()=>URL.revokeObjectURL(objectUrl),{once:true});}catch(error){errorAt(content,error);}}
 function countdown(ms){let sec=Math.floor((ms-Date.now())/1000);if(sec<=0)return'已到截止时间';const d=Math.floor(sec/86400);sec%=86400;return`${d?d+' 天 ':''}${String(Math.floor(sec/3600)).padStart(2,'0')} : ${String(Math.floor(sec%3600/60)).padStart(2,'0')} : ${String(sec%60).padStart(2,'0')}`;}
 setInterval(()=>document.querySelectorAll('[data-countdown]').forEach(n=>n.textContent=countdown(Number(n.dataset.countdown))),1000);
 function updateAccount(){$('#account-button .account-label').textContent=state.user?'账户':'登录';$('#account-button').title=state.user?state.user.nickname:'登录 / 注册';}
@@ -66,14 +152,20 @@ function overviewCalendar(slots){
  return el('div',{class:'mini-calendar',role:'img','aria-label':year+'年'+m+'月，活动日期：'+dates.filter(d=>d.startsWith(month)).map(d=>Number(d.slice(-2))+'日').join('、')},el('strong',{},year+' / '+String(m).padStart(2,'0')),grid);
  }));
 }
-function overviewCard(e){const slots=eventSlots(e);return el('a',{class:'overview-event',href:`#event/${e.id}`},el('div',{class:'overview-event-heading'},el('h3',{},e.title),badge(e.status)),el('p',{class:'overview-event-meta'},e.city+' · '+(e.selectedSlotId?'最终时段':slots.length>1?slots.length+' 个候选时段':'活动时间')),overviewCalendar(slots),el('p',{class:'overview-description'},e.description),el('div',{class:'overview-event-bottom'},el('span',{},`${e.counts?.joined||0} 人报名 · ${e.rules.minPeople} 人起成行`),el('span',{},'查看活动流程 →')));}
+function overviewCardVisual(e,slots){const calendar=overviewCalendar(slots),root=el('div',{class:'overview-card-visual'},calendar);if(calendar.children.length<2){const image=el('img',{class:'city-coffee',crossorigin:'anonymous',src:cityCoffee(e.city)+'?cors=1',alt:'',loading:'lazy'});image.onerror=()=>{if(image.getAttribute('src')!==defaultCoffee)image.src=defaultCoffee;else image.hidden=true;};const info=el('div',{class:'overview-card-info'},el('div',{class:'overview-story'},image,el('p',{class:'overview-description'},e.description)),eventProgress(e));root.append(info);root.classList.add('single-month');}else root.append(el('div',{class:'overview-card-info'},el('p',{class:'overview-description'},e.description),eventProgress(e)));return root;}
+function eventTags(e){return el('div',{class:'event-tags'},(e.tags||[]).map(tag=>el('span',{},'# '+tag)));}
+function eventProgress(e){const cs=(e.conditions||[]).filter(c=>c.required>0),done=cs.filter(c=>c.satisfied).length,total=cs.length;if(!total)return document.createDocumentFragment();const label=(['completed','cancelled'].includes(e.status)?'最后条件快照':'成行条件')+' · '+done+'/'+total+' 项已满足';return el('div',{class:'event-progress'},el('div',{},label),el('progress',{max:total,value:done,'aria-label':label}));}
+function overviewCard(e){const slots=eventSlots(e);return el('a',{class:'overview-event',href:`#event/${e.id}`},el('div',{class:'overview-event-heading'},el('h3',{},e.title),badge(e.status)),el('p',{class:'overview-event-meta'},e.city+' · '+(e.selectedSlotId?'最终时段':slots.length>1?slots.length+' 个候选时段':'活动时间')),eventTags(e),overviewCardVisual(e,slots),el('div',{class:'overview-event-bottom'},el('span',{},`${e.counts?.joined||0} 人报名 · ${e.rules.minPeople} 人起成行`),el('span',{},'查看活动流程 →')));}
 function overviewMap(events){const wrapper=el('div',{class:'overview-map-real'});requestAnimationFrame(()=>{if(wrapper.isConnected)mountMap(wrapper,events,state.city,city=>{state.city=city;renderHome();});});return wrapper;}
-function renderHome(){state.detailVisible=false;state.pendingEvent=null;const range=overviewRange(),invalid=range&&(!range.from||!range.to||range.from>range.to),timeEvents=invalid?[]:filterEvents(state.events,'全部',range),filtered=invalid?[]:filterEvents(state.events,state.city,range);const heading=el('header',{class:'overview-heading'},el('div',{},el('span',{class:'eyebrow'},'DATA COFFEE / 活动总览'),el('h1',{class:'coffee-dags-title'},el('s',{class:'airflow-joke'},'Airflow'),' Data Coffee DAGs'),el('p',{class:'muted'},'把相聚调度起来 · 按城市和时间找到你的下一杯咖啡。')),el('span',{class:'overview-total'},filtered.length+' 场活动'));
+function renderHome(){state.detailVisible=false;state.pendingEvent=null;const range=overviewRange(),invalid=range&&(!range.from||!range.to||range.from>range.to),timeEvents=invalid?[]:filterEvents(state.events,'全部',range).filter(e=>!state.selectedTag||(e.tags||[]).some(tag=>tag.toLowerCase()===state.selectedTag.toLowerCase())),filtered=filterEvents(timeEvents,state.city,range);const heading=el('header',{class:'overview-heading'},el('div',{},el('span',{class:'eyebrow'},'DATA COFFEE / 活动总览'),el('h1',{class:'coffee-dags-title'},el('s',{class:'airflow-joke'},'Airflow'),' Data Coffee DAGs'),el('p',{class:'muted'},'把相聚调度起来 · 按城市和时间找到你的下一次 coffee chat。')),el('span',{class:'overview-total'},filtered.length+' 场活动'));
 const periods=el('div',{class:'overview-periods','aria-label':'按时间筛选'},[['all','全部时间'],['current','本月'],['next','下月'],['custom','自选日期']].map(([key,label])=>btn(label,()=>{state.period=key;renderHome();},'filter'+(state.period===key?' active':''))));periods.querySelectorAll('button').forEach((b,i)=>b.setAttribute('aria-pressed',String(['all','current','next','custom'][i]===state.period)));
+const tags=[...new Map(state.events.flatMap(e=>e.tags||[]).map(tag=>[tag.toLowerCase(),tag])).values()].sort((a,b)=>a.localeCompare(b,'zh-CN'));
+const tagFilters=el('div',{class:'overview-tag-filters','aria-label':'按主题标签筛选'},el('span',{class:'muted'},'想聊什么'),['',...tags].map(tag=>el('button',{type:'button',class:'filter'+(state.selectedTag===tag?' active':''),'aria-pressed':String(state.selectedTag===tag),onclick:()=>{state.selectedTag=state.selectedTag===tag?'':tag;renderHome();}},tag||'全部主题')));
 const controls=el('section',{class:'overview-controls'},periods);if(state.period==='custom'){const from=el('input',{type:'date',value:state.from,'aria-label':'开始日期'}),to=el('input',{type:'date',value:state.to,'aria-label':'结束日期'});from.onchange=()=>{state.from=from.value;renderHome();};to.onchange=()=>{state.to=to.value;renderHome();};controls.append(el('div',{class:'overview-dates'},el('label',{},'从 ',from),el('label',{},'至 ',to)),invalid?el('p',{class:'error-box',role:'alert'},'请选择完整日期范围，结束日期须不早于开始日期。'):document.createDocumentFragment());}
+controls.append(tagFilters);
 const cities=['全部',...new Set(timeEvents.map(e=>e.city).filter(Boolean))];const cityButtons=el('div',{class:'overview-cities','aria-label':'按城市筛选'},cities.map(city=>{const count=city==='全部'?timeEvents.length:timeEvents.filter(e=>e.city===city).length;return el('button',{type:'button',class:'overview-city'+(state.city===city?' active':''),'aria-pressed':String(state.city===city),onclick:()=>{state.city=city;renderHome();}},el('span',{},city),el('span',{class:'city-count'},count));}));
-const geography=el('section',{class:'overview-geography'},el('h2',{},'城市分布'),overviewMap(timeEvents),cityButtons);const results=el('section',{class:'overview-results','aria-label':'筛选结果','aria-live':'polite'},el('div',{class:'overview-results-heading'},el('h2',{},state.city==='全部'?'所有城市':state.city),el('span',{class:'muted'},filtered.length+' 场')),filtered.length?filtered.map(overviewCard):el('div',{class:'empty'},el('h3',{},invalid?'先选好日期':'No coffee runs found.'),el('p',{},invalid?'补全日期后即可查看结果。':'这个范围还没有咖啡被调度。试试其他城市或时间，或发起一场。'),btn('重置筛选',()=>{state.city='全部';state.period='all';renderHome();})));
-app.replaceChildren(el('div',{id:'gatherings',class:'overview'},heading,controls,el('div',{class:'overview-layout'},geography,results)));}
+const geography=el('section',{class:'overview-geography'},el('h2',{},'城市分布'),overviewMap(timeEvents),cityButtons);const results=el('section',{class:'overview-results','aria-label':'筛选结果','aria-live':'polite'},el('div',{class:'overview-results-heading'},el('h2',{},state.city==='全部'?'所有城市':state.city),el('span',{class:'muted'},filtered.length+' 场')),filtered.length?filtered.map(overviewCard):el('div',{class:'empty'},el('h3',{},invalid?'先选好日期':'No coffee runs found.'),el('p',{},invalid?'补全日期后即可查看结果。':'这个范围还没有咖啡被调度。试试其他城市或时间，或发起一场。'),btn('重置筛选',()=>{state.city='全部';state.period='all';state.selectedTag='';renderHome();})));
+app.replaceChildren(el('div',{id:'gatherings',class:'overview'},heading,el('aside',{class:'decision-note overview-intro'},el('strong',{},'想聊就报名，一起把局凑起来 ☕'),el('p',{},'群里的大聚会，刚认识的人还没聊够就散场了？或只是想找几个同频的人，喝杯咖啡，聊聊想法和近况。'),el('p',{},'想约一次 coffee chat，又不想在群里吆喝？这里是给全荷兰华人数据同行准备的低噪声相聚空间。'),el('p',{},'你可以自己攒局，也可以加入感兴趣的一场。推荐场地、搭把手，都欢迎。'),el('p',{},'不用一个人张罗齐所有事情。大家一起凑，条件满足就按约定自动开局。'),el('p',{},'这次没凑成也没关系，下次再约。出发前，记得看看活动的最新安排。')),controls,el('div',{class:'overview-layout'},geography,results)));}
 
 async function command(action,extra={}){if(!requireUser())return;const id=state.event.id;const r=await api(`/api/events/${id}/actions`,{action,version:state.event.version,...extra});closeModal();toast('操作已保存');if(state.event?.id===id)await loadEvent(id);return r;}
 function run(action,extra={},node){return command(action,extra).catch(e=>node?errorAt(node,e):toast(e.message));}
@@ -81,6 +173,34 @@ function confirmation(title,message,action,extra={},reason=false){const f=el('fo
 function conditionNode(c){return el('div',{class:`condition ${c.satisfied?'ok':''}`},el('div',{class:'condition-top'},el('span',{},c.label),el('span',{},c.satisfied?'✓ 已满足':'待补齐')),el('strong',{},`${c.current} / ${c.required}`),el('div',{class:'progress-track'},el('span',{style:`width:${c.required?Math.min(100,c.current/c.required*100):100}%`})),el('span',{class:'muted'},c.continuous?'成行后仍需持续满足':'成行时检查'));}
 function applyForm(kind){if(!requireUser())return;const f=el('form',{},el('h2',{},`申请${kinds[kind]}`),field('标题','title','text'),field('具体说明','detail','textarea'));if(kind==='venue')f.append(field('可容纳人数','capacity','number'),field('详细地址','address','text'),el('p',{class:'muted'},state.event.rules.addressVisibility==='participants'?'地址仅按活动规则向参与者展示。':'此活动将公开场地地址。'));if(kind==='talk')f.append(field('预计时长（分钟）','duration','number',20));if(kind==='pledge')f.append(field('赞助金额（欧元）','amount','number'));const b=el('button',{class:'button dark',type:'submit'},'提交申请');f.append(el('p',{class:'form-note'},'申请通过后才计入条件。申请只代表你本人，可以在活动中查看处理结果或撤回。'),b);f.onsubmit=async e=>{e.preventDefault();b.disabled=true;const v=Object.fromEntries(new FormData(f));for(const k of ['capacity','amount','duration'])if(k in v)v[k]=Number(v[k]);try{await command('apply',{kind,...v});}catch(err){errorAt(f,err);}finally{b.disabled=false;}};modal(f);}
 function applicationNode(a,e,reviewControls=true,ownControls=true){const own=(e.myApplications||[]).some(x=>x.id===a.id);const mutable=!['cancelled','completed'].includes(e.status)&&Date.now()<e.rules.startsAt;const canReview=reviewControls&&mutable&&(['cohost','venue','host'].includes(a.kind)?e.isOwner:e.canManage);return el('div',{class:'application'},el('h3',{},`${kinds[a.kind]||a.kind} · ${a.title} `,badge(a.status)),el('p',{},a.detail),a.capacity?el('p',{},`容量：${a.capacity} 人`):null,a.address?el('p',{},`地址：${a.address}`):null,a.duration?el('p',{},`分享时长：${a.duration} 分钟`):null,a.amount?el('p',{},`赞助：€${a.amount}`):null,a.reason?el('p',{},`处理说明：${a.reason}`):null,el('div',{class:'inline-actions'},ownControls&&mutable&&own&&['pending','approved'].includes(a.status)?btn('撤回 / 退出',()=>confirmation('撤回这项申请？','撤回已通过的申请可能影响成行条件。','withdraw',{applicationId:a.id}),'button quiet'):null,canReview&&a.status==='pending'?btn('通过',()=>confirmation('通过申请？',`批准「${a.title}」，系统将重新检查成行条件。`,'review',{applicationId:a.id,approved:true})):null,canReview&&a.status==='pending'?btn('拒绝',()=>confirmation('拒绝申请','请向申请人说明原因。','review',{applicationId:a.id,approved:false},true),'button quiet'):null,mutable&&e.isOwner&&a.kind==='cohost'&&a.status==='approved'?btn('撤销协办资格',()=>confirmation('撤销批准','撤销后系统将重新检查活动条件。','revoke',{applicationId:a.id},true),'button danger'):null));}
+function decisionSummary(e){
+  if(e.status==='draft')return null;
+  const titles={recruiting:'尚未成行 · 正在征集',confirmed:'已成行',repairing:'成行条件有变化 · 等待补齐',cancelled:'活动已取消',completed:'活动已结束'};
+  const selected=(e.rules.timeSlots||[]).find(s=>s.id===e.selectedSlotId);
+  const fixed=selected||(!(e.rules.timeSlots||[]).length?e.rules:null);
+  const venues=(e.applications||[]).filter(a=>a.kind==='venue'&&a.status==='approved');
+  const hosts=(e.conditions||[]).find(c=>c.key==='hosts');
+  const missing=(e.conditions||[]).filter(c=>!c.satisfied);
+  const terminal=['completed','cancelled'].includes(e.status);
+  const note=e.status==='completed'?'活动周期已结束，以下为最后确认的安排。':e.status==='cancelled'?(e.reason||'本场活动已取消，请勿按原安排前往。'):e.status==='confirmed'?'当前已满足成行规则，以下为已确认安排。':e.status==='repairing'?'当前条件不足，请等待补齐后的最新决策。':'发布与报名不代表成行，请以这里的最新决策为准。';
+  const item=(name,value)=>el('div',{},el('dt',{},name),el('dd',{},value));
+  const root=el('section',{class:'event-decision decision-'+e.status,'aria-label':'当前活动决策'},
+    el('span',{class:'eyebrow'},terminal?'最终状态':'当前决策'),
+    el('h2',{},titles[e.status]||statusNames[e.status]),el('p',{},note),
+    el('dl',{class:'decision-facts'},
+      item('时间',fixed?date(fixed.startsAt)+' — '+date(fixed.endsAt):'待确认'),
+      item('地点',e.city+(venues.length?' · '+venues.map(v=>v.title+(v.address?' · '+v.address:'')).join('、'):e.rules.venueRequired?' · 场地待确认':' · 具体地点待约定')),
+      item('参与人数',(e.counts?.joined||0)+' 人报名 · '+e.rules.minPeople+' 人起成行'),
+      item('现场负责人',hosts?hosts.current>0?'已确认 '+hosts.current+' 人':'待确认':'未要求')));
+  root.append(eventTags(e),eventProgress(e));
+  if(venues.some(v=>!v.address)&&e.rules.addressVisibility==='participants')root.append(el('small',{},'详细地址按活动规则向参与者展示。'));
+  if(!terminal&&e.status!=='confirmed'){
+    root.append(el('p',{class:'decision-pending'},missing.length?'待满足：'+missing.map(c=>(c.key==='people'?'最终时段可参加人数':c.label)+'（'+c.current+'/'+c.required+'）').join(' · '):'条件已满足，等待系统按规则确认成行。'));
+    const deadline=e.status==='repairing'&&e.repairs?.length?Math.min(...e.repairs.map(r=>r.deadline).filter(Number.isFinite)):e.rules.recruitmentDeadline;
+    if(Number.isFinite(deadline))root.append(el('p',{class:'decision-deadline'},(e.status==='repairing'?'补齐截止：':'征集截止：')+date(deadline)));
+  }
+  return root;
+}
 function renderDetail(e){
   state.renderedPhase=eventTimePhase(e);state.detailVisible=true;state.pendingEvent=null;
   const p=e.myParticipation,joined=typeof p==='string'?p:p?.status;
@@ -105,11 +225,11 @@ function renderDetail(e){
   };
 
   flow.append(el('div',{class:'code-terminal'},'START · 发起活动'),arrow());
-  const topicDetail=el('div',{},el('div',{class:'prose'},e.description||'发起人尚未填写介绍。'));
+  const topicDetail=el('div',{},eventTags(e),el('div',{class:'prose'},e.description||'发起人尚未填写介绍。'));
   if(e.isOwner&&!['cancelled','completed'].includes(e.status)){
     const row=el('div',{class:'inline-actions'});
     if(e.status==='draft')row.append(btn('编辑草稿',()=>renderEventForm(e)),btn('预览并发布',()=>publishPreview(e),'button dark'));
-    else if(beforeStart)row.append(btn('更正活动介绍',()=>{const f=el('form',{},el('h2',{},'更正活动介绍'),field('介绍','description','textarea',e.description),el('button',{class:'button dark',type:'submit'},'保存更正'));f.onsubmit=async ev=>{ev.preventDefault();try{await command('describe',{description:f.elements.description.value});}catch(err){errorAt(f,err);}};modal(f);}));
+    else if(beforeStart)row.append(btn('更正活动介绍',()=>{const tags=tagPicker(e.tags||[]);const f=el('form',{},el('h2',{},'更正活动介绍'),tags.root,field('介绍','description','textarea',e.description),el('button',{class:'button dark',type:'submit'},'保存更正'));f.onsubmit=async ev=>{ev.preventDefault();try{await command('describe',{description:f.elements.description.value,tags:tags.read()});}catch(err){errorAt(f,err);}};modal(f);}));
     topicDetail.append(row);
   }
   flow.append(node('发起活动',e.description?'主题与规则已设定':'等待填写主题',e.status==='draft',e.status==='draft'?'参与':'查看',topicDetail,e.status==='draft'),arrow(),el('div',{class:'parallel-fork','aria-hidden':'true'}));
@@ -130,17 +250,30 @@ function renderDetail(e){
   prefForm.append(el('p',{class:'form-note'},slots.length?(selectedSlot?'最终时段已确认，请确认你可以参加该时段。':'勾选所有可以参加的时段，发布者将在征集截止前确认一次最终安排。'):'请确认你可以参加已公布的活动时间。'),prefSubmit);
   prefForm.onsubmit=async ev=>{ev.preventDefault();prefSubmit.disabled=true;try{const availableSlotIds=new FormData(prefForm).getAll('availableSlotIds');if(slots.length&&!availableSlotIds.length)throw new Error('请至少选择一个可以参加的时段。');if(selectedSlot&&!availableSlotIds.includes(selectedSlot.id))throw new Error('报名需要能够参加已确认的最终时段。');await command('join',{availableSlotIds,transportPreferences:new FormData(prefForm).getAll('transportPreferences'),registrationMessage:prefForm.elements.registrationMessage.value});}catch(err){errorAt(prefForm,err);}finally{prefSubmit.disabled=false;}};
   const prefSummary=e.preferenceSummary||{times:[],places:[]};
+  const replyRegistration=person=>{const form=el('form',{},el('h2',{},'回复报名留言'),el('p',{class:'registration-message'},person.registrationMessage),field('发起人回复','reply','textarea',person.registrationReply||''),el('button',{class:'button dark',type:'submit'},person.registrationReply?'更新回复':'发布回复'));form.elements.reply.maxLength=500;form.onsubmit=async ev=>{ev.preventDefault();const submit=form.querySelector('[type=submit]');submit.disabled=true;try{await command('reply_registration',{participantId:person.participantId,reply:form.elements.reply.value});}catch(error){errorAt(form,error);}finally{submit.disabled=false;}};modal(form);};
+  const participantList=people.length
+    ?el('div',{class:'participant-list'},people.map(person=>{
+      const conversation=person.registrationMessage
+        ?el('div',{class:'registration-thread'},
+          el('p',{class:'registration-message'},person.registrationMessage),
+          person.registrationReply?el('p',{class:'registration-reply'},el('strong',{},'发起人回复：'),person.registrationReply):null,
+          e.isOwner&&active&&person.participantId?btn(person.registrationReply?'修改回复':'回复留言',()=>replyRegistration(person),'button quiet'):null)
+        :el('p',{class:'muted'},'没有填写报名留言。');
+      return el('article',{class:'person'},el('strong',{},`${person.nickname||'匿名参与者'}${person.isMe?'（我）':''} · ${statusNames[person.status]||person.status}`),conversation);
+    }))
+    :el('p',{class:'muted'},'还没有人报名。');
   const joinDetail=el('div',{class:'registration-detail'},el('div',{class:'registration-actions'},el('p',{class:'muted'},`最低 ${e.rules.minPeople} 人，最多 ${e.rules.maxPeople} 人；报名截止：${date(e.rules.registrationDeadline)}`),
     registrationOpen&&((slots.length&&!selectedSlot)||!full||waitOpen||['joined','waitlisted'].includes(joined))?prefForm:el('p',{class:'form-note'},'报名已关闭。'),
-    joined&&joined!=='left'?el('div',{class:'inline-actions'},el('span',{class:'form-note'},`我的状态：${statusNames[joined]}`),active&&(beforeStart||joined==='waitlisted')?btn(joined==='waitlisted'?'退出候补':'退出报名',()=>confirmation('退出这场聚会？','席位将按规则释放。','leave'),'button quiet'):null):null,
-    el('details',{id:'detail-participants'},el('summary',{},'查看参与名单'),people.length?el('div',{class:'participant-list'},people.map(x=>el('div',{class:'person'},el('strong',{},`${x.nickname||'匿名参与者'}${x.isMe?'（我）':''} · ${statusNames[x.status]||x.status}`),x.registrationMessage?el('p',{class:'registration-message'},x.registrationMessage):null))):el('p',{class:'muted'},'还没有人报名。'))),
-    el('div',{class:'preference-summary'},slots.length?summaryChart('可参加时段人数（可多选）',slots.map(slot=>({id:slot.id,label:date(slot.startsAt)+' — '+date(slot.endsAt),count:(prefSummary.slots||[]).find(x=>x.id===slot.id)?.count||0}))):null,summaryChart('交通汇总（可多选）',prefSummary.transport)));
+    joined&&joined!=='left'?el('div',{class:'inline-actions'},el('span',{class:'form-note'},`我的状态：${statusNames[joined]}`),active&&(beforeStart||joined==='waitlisted')?btn(joined==='waitlisted'?'退出候补':'退出报名',()=>confirmation('退出这场聚会？','席位将按规则释放。','leave'),'button quiet'):null):null));
 
   const canSelectTime=e.isOwner&&e.status==='recruiting'&&!e.selectedSlotId&&Date.now()<e.rules.recruitmentDeadline;
   const timeDetail=el('div',{},el('p',{class:'journey-lead'},`${e.city} · ${slots.length&&!selectedSlot?'等待确认最终时段':date(e.rules.startsAt)+' — '+date(e.rules.endsAt)}`));
   if(slots.length){
     timeDetail.append(el('p',{class:'muted'},selectedSlot?'最终时段已确认。':'发布者须在征集截止前确认一个最终时段；确认后不可修改。'),...slots.map(s=>el('div',{class:'slot-result'},el('span',{},`${date(s.startsAt)} — ${date(s.endsAt)} · ${(prefSummary.slots||[]).find(x=>x.id===s.id)?.count||0} 人可参加`),s.id===e.selectedSlotId?el('strong',{},'已确认'):canSelectTime?btn('确认此时段',()=>confirmation('确认最终时段',`${date(s.startsAt)} — ${date(s.endsAt)}。确认后不可修改。`,'select_time',{slotId:s.id}),'button quiet'):null)));
   }
+  timeDetail.append(
+    el('section',{id:'detail-participants'},el('h3',{},'报名成员与留言'),participantList),
+    el('div',{class:'preference-summary'},slots.length?summaryChart('可参加时段人数（可多选）',slots.map(slot=>({id:slot.id,label:date(slot.startsAt)+' — '+date(slot.endsAt),count:(prefSummary.slots||[]).find(x=>x.id===slot.id)?.count||0}))):null,summaryChart('交通汇总（可多选）',prefSummary.transport)));
   const peopleCondition=conditions.find(c=>c.key==='people');
   const venueCondition=conditions.find(c=>c.key==='venue');
   const hostCondition=conditions.find(c=>c.key==='hosts');
@@ -161,32 +294,77 @@ function renderDetail(e){
   flow.append(el('div',{class:`code-terminal code-end ${e.status==='cancelled'?'muted-terminal':''}`},e.status==='cancelled'?'END · 已取消':'END · 线下相聚'));
   const canvas=el('div',{class:'dag-canvas'}),panel=el('aside',{class:'dag-panel','aria-label':'节点详情'});
   const positions=[[50,20],[16.7,180],[16.7,350],[50,180],[50,350],[83.3,180],[83.3,350],[50,520]];
+  const deadlineLabels=[
+    '发布前设置',
+    '报名截止 '+date(repair?Math.min(repair.deadline,e.rules.startsAt):e.rules.registrationDeadline),
+    '确认期限 '+date(e.rules.recruitmentDeadline),
+    '提交截至 '+date(e.rules.startsAt),
+    '成行检查 '+date(e.rules.recruitmentDeadline),
+    '报名截至 '+date(e.rules.startsAt),
+    '成行检查 '+date(e.rules.recruitmentDeadline),
+    '成行决定 '+date(e.rules.recruitmentDeadline)
+  ];
+  const deadlines=[null,repair?Math.min(repair.deadline,e.rules.startsAt):e.rules.registrationDeadline,e.rules.recruitmentDeadline,e.rules.startsAt,e.rules.recruitmentDeadline,e.rules.startsAt,e.rules.recruitmentDeadline,e.rules.recruitmentDeadline];
   const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');svg.setAttribute('viewBox','0 0 1000 630');svg.setAttribute('preserveAspectRatio','none');svg.setAttribute('class','dag-links');svg.setAttribute('aria-hidden','true');
-  const path=document.createElementNS(svg.namespaceURI,'path');path.setAttribute('d','M500 116 V146 H167 V180 M500 146 V180 M500 146 H833 V180 M167 276 V350 M500 276 V350 M833 276 V350 M167 446 V483 H500 V520 M500 446 V520 M833 446 V483 H500');svg.append(path);canvas.append(svg);
+  const defs=document.createElementNS(svg.namespaceURI,'defs'),marker=document.createElementNS(svg.namespaceURI,'marker'),tip=document.createElementNS(svg.namespaceURI,'path');marker.id='dag-direction';marker.setAttribute('viewBox','0 0 10 10');marker.setAttribute('refX','9');marker.setAttribute('refY','5');marker.setAttribute('markerWidth','8');marker.setAttribute('markerHeight','8');marker.setAttribute('orient','auto');tip.setAttribute('d','M 1 1 L 9 5 L 1 9 Z');tip.setAttribute('style','fill:#698aaf;stroke:none');marker.append(tip);defs.append(marker);svg.append(defs);
+  const connections=[
+    ['M500 116 V146 M167 146 H833',false],
+    ['M167 146 V180',true],['M500 146 V180',true],['M833 146 V180',true],
+    ['M167 276 V350',true],['M500 276 V350',true],['M833 276 V350',true],
+    ['M167 446 V483 H833 V446 M500 446 V483',false],
+    ['M500 483 V520',true]
+  ];
+  for(const [d,directed] of connections){const path=document.createElementNS(svg.namespaceURI,'path');path.setAttribute('d',d);if(directed)path.setAttribute('marker-end','url(#dag-direction)');svg.append(path);}canvas.append(svg);
   const nodes=[...flow.querySelectorAll('.code-node')];
   const nodeStates=dagStatuses({...e,conditions,applications});
-  const taskLabels=['create_coffee','join','confirm_time','propose_venue','confirm_venue','apply_host','confirm_host','ready'];
-  nodes.forEach((box,i)=>{const button=el('button',{class:'dag-node state-'+nodeStates[i]+' '+(box.classList.contains('editable')?'dag-open':'dag-locked'),type:'button','aria-pressed':'false'},el('code',{class:'dag-task-id'},taskLabels[i]),el('strong',{},box.dataset.flowKey),el('small',{},dagStatusLabels[nodeStates[i]]+' · '+box.querySelector('.node-status').textContent.replace('状态：','')));button.setAttribute('aria-label',box.dataset.flowKey+' · '+dagStatusLabels[nodeStates[i]]);button.title=dagStatusLabels[nodeStates[i]];button.style.left=positions[i][0]+'%';button.style.top=positions[i][1]+'px';button.style.setProperty('--node-y',positions[i][1]);canvas.append(button);box._dagButton=button;});
+  const nodeTitles=['活动规则','报名','确认时间','提议场地','确认场地','报名负责人','确认负责人','成行检查'];
+  const nodeSummaries=[
+    e.status==='draft'?'待发布':'已发布',
+    `${(e.counts?.joined||0)+(e.counts?.waitlisted||0)} 人报名`,
+    selectedSlot?'已确定':'待确定',
+    `${appsFor(['venue']).filter(a=>a.status==='pending').length} 个待确认`,
+    venueCondition?.satisfied?(e.rules.venueRequired?'已确认':'非必需'):'待确认',
+    `${appsFor(['host']).filter(a=>a.status==='pending').length} 人待确认`,
+    !e.rules.minHosts?'非必需':hostCondition?.satisfied?'已确认':'待确认',
+    conditions.every(c=>c.satisfied)?'条件已齐':`还差 ${conditions.filter(c=>!c.satisfied).length} 项`
+  ];
+  const progressFor=i=>{
+    const c=i===1?peopleCondition:i===6?hostCondition:null;
+    if(c&&c.required>0)return [Math.min(1,c.current/c.required),c.current+'/'+c.required+' 人'];
+    if(i===7)return [conditions.length?conditions.filter(c=>c.satisfied).length/conditions.length:0,conditions.filter(c=>c.satisfied).length+'/'+conditions.length+' 项'];
+    if((i===4&&!e.rules.venueRequired)||(i===6&&!e.rules.minHosts))return [null,'非必需'];
+    if(i===3||i===5)return [null,nodeSummaries[i]];
+    const done=nodeStates[i]==='success';return [done?1:0,done?'已完成':'待完成'];
+  };
+  nodes.forEach((box,i)=>{
+    const button=el('button',{class:'dag-node state-'+nodeStates[i],type:'button','aria-pressed':'false'},el('strong',{},nodeTitles[i]),el('small',{},nodeSummaries[i]),el('span',{class:'dag-entry','aria-hidden':'true'},'→'));
+    button.setAttribute('aria-label',box.dataset.flowKey+'，点击查看详情');button.style.left=positions[i][0]+'%';button.style.top=positions[i][1]+'px';button.style.setProperty('--node-y',positions[i][1]);canvas.append(button);
+    if(e.status!=='draft'){
+      const [ratio,label]=progressFor(i);
+      const metrics=el('span',{class:'dag-metrics'});
+      if(deadlines[i]){const remaining=Math.max(0,deadlines[i]-Date.now()),hours=Math.ceil(remaining/3600000);const time=remaining===0?'已到期':hours>=24?'剩 '+Math.ceil(hours/24)+' 天':'剩 '+hours+' 小时';metrics.append(el('span',{class:'dag-time',title:deadlineLabels[i]},'⌛ '+time));}
+      metrics.append(el('span',{class:'dag-completion'},ratio!==null?el('progress',{max:1,value:ratio,'aria-label':'完成度：'+label}):null,el('span',{},label)));
+      button.querySelector('small').remove();button.insertBefore(metrics,button.querySelector('.dag-entry'));
+    }
+    box._dagButton=button;
+  });
   // Keep each form alive when switching nodes; never duplicate API action controls.
   const details=new Map(nodes.map(box=>[box,box.querySelector('.code-node-detail')]));
   const draft=e.status==='draft'&&e.isOwner;
-  const editStage=i=>{renderEventForm(e);const targets=['[name=title]','.slot-editor','.slot-editor','[name=venueRequired]','[name=venueRequired]','[name=minHosts]','[name=minHosts]','[name=repairMinutes]'];const target=app.querySelector(targets[i]);target?.closest('fieldset, .panel')?.scrollIntoView({block:'start'});(target?.type==='radio'?target.closest('label'):target)?.focus({preventScroll:true});};
+  const editStage=i=>{closeModal();renderEventForm(e);const targets=['[name=title]','.slot-editor','.slot-editor','[name=venueRequired]','[name=venueRequired]','[name=minHosts]','[name=minHosts]','[name=repairMinutes]'];const target=app.querySelector(targets[i]);target?.closest('fieldset, .panel')?.scrollIntoView({block:'start'});(target?.type==='radio'?target.closest('label'):target)?.focus({preventScroll:true});};
   if(draft)nodes.forEach((box,i)=>{box._dagButton.querySelector('small').textContent='草稿 · 点击编辑设置';details.set(box,el('div',{class:'code-node-detail'},el('p',{},'活动尚未发布。现在可以编辑这一阶段的设置，发布后才开放报名与提议。'),btn('编辑此阶段',()=>editStage(i),'button dark')));});
-  nodes.forEach(box=>{box._dagButton.onclick=()=>{panel.querySelector('.code-node-detail')?.remove();canvas.querySelectorAll('.dag-node').forEach(n=>n.setAttribute('aria-pressed',String(n===box._dagButton)));state.dagSelection={eventId:e.id,stage:box.dataset.flowKey};panel.replaceChildren(el('small',{},'节点详情'),el('h2',{},box.dataset.flowKey),el('p',{class:'muted'},draft?'草稿 · 尚未开放参与':box.querySelector('.node-status').textContent),details.get(box));};});
+  panel.classList.add('node-dialog');
+  nodes.forEach(box=>{box._dagButton.onclick=()=>{panel.querySelector('.code-node-detail')?.remove();canvas.querySelectorAll('.dag-node').forEach(n=>n.setAttribute('aria-pressed',String(n===box._dagButton)));state.dagSelection={eventId:e.id,stage:box.dataset.flowKey};panel.replaceChildren(el('h2',{},box.dataset.flowKey),el('p',{class:'muted'},draft?'草稿 · 尚未开放参与':box.querySelector('.node-status').textContent),details.get(box));modal(panel);};});
   const registrationAvailable=registrationOpen&&((slots.length&&!selectedSlot)||!full||waitOpen||['joined','waitlisted'].includes(joined));
-  const registrationButton=btn(['joined','waitlisted'].includes(joined)?'查看我的报名':'立即报名',()=>{
+  const registrationButton=btn(['joined','waitlisted'].includes(joined)?'查看我的报名':'去报名',()=>{
     nodes[1]._dagButton.click();
-    const graph=canvas.closest('.dag-graph');
-    panel.style.scrollMarginTop=(getComputedStyle(graph).position==='sticky'?graph.getBoundingClientRect().height+12:16)+'px';
-    panel.tabIndex=-1;
-    panel.focus({preventScroll:true});
-    panel.scrollIntoView({block:'start',behavior:'instant'});
   },'button registration-cta');
   const hasRegistration=['joined','waitlisted'].includes(joined);
   registrationButton.disabled=!registrationAvailable&&!hasRegistration;
   if(registrationButton.disabled)registrationButton.textContent='报名已关闭';
-  const selected=nodes.find(box=>state.dagSelection?.eventId===e.id&&box.dataset.flowKey===state.dagSelection.stage)||nodes[1]||nodes[0];selected._dagButton.click();
-  app.replaceChildren(el('a',{class:'back',href:'#'},'← 所有聚会'),el('header',{class:'detail-header code-header'},el('span',{class:'eyebrow'},'COFFEE DAG / GRAPH'),el('h1',{},e.title),el('p',{class:'muted publisher'},'发布人：'+(e.publisher?.nickname||'匿名成员')),el('div',{class:'detail-primary-actions'},badge(e.status),e.status!=='draft'?registrationButton:null)),draft?el('div',{class:'draft-toolbar'},el('span',{},'草稿预览 · 仅你可见'),btn('返回编辑',()=>renderEventForm(e)),btn('发布活动',()=>publishPreview(e),'button dark'),btn('删除草稿',()=>deleteDraftDialog(e),'button danger')):document.createDocumentFragment(),el('div',{class:'dag-workspace'},el('section',{class:'dag-graph'},el('div',{class:'dag-toolbar'},'Graph · 每个节点，都是相聚的一步 · 点击查看或参与'),canvas,el('p',{class:'muted'},'报名 / 提议 → 发起人确认 → READY · 截止后按规则成行或取消')),panel));
+  const selected=nodes.find(box=>state.dagSelection?.eventId===e.id&&box.dataset.flowKey===state.dagSelection.stage);selected?._dagButton.setAttribute('aria-pressed','true');
+
+  app.replaceChildren(el('a',{class:'back',href:'#'},'← 所有聚会'),el('header',{class:'detail-header code-header'},el('span',{class:'eyebrow'},'COFFEE DAG / GRAPH'),el('h1',{},e.title),el('p',{class:'muted publisher'},'发布人：'+(e.publisher?.nickname||'匿名成员')),decisionSummary(e),el('div',{class:'detail-primary-actions'},badge(e.status),e.status!=='draft'?registrationButton:null,e.status!=='draft'?btn('分享活动',()=>shareEvent(e),'button share-cta'):null)),draft?el('div',{class:'draft-toolbar'},el('span',{},'草稿预览 · 仅你可见'),btn('返回编辑',()=>renderEventForm(e)),btn('发布活动',()=>publishPreview(e),'button dark'),btn('删除草稿',()=>deleteDraftDialog(e),'button danger')):document.createDocumentFragment(),el('div',{class:'dag-workspace dag-modal-workspace'},el('section',{class:'dag-graph'},el('div',{class:'dag-toolbar'},'点击节点，查看详情或办理事项 · 连线表示活动流程'),canvas,el('p',{class:'muted'},'报名 / 提议 → 发起人确认 → READY · 截止后按规则成行或取消'))));
 }
 
 function deleteDraftDialog(e){
@@ -258,8 +436,8 @@ function hostRange(value){
  const sync=()=>{output.textContent=input.value==='0'?'0 人 · 不要求现场负责人':input.value+' 人';input.setAttribute('aria-valuetext',output.textContent);};input.oninput=sync;sync();
  return el('label',{class:'field host-range'},'最少现场负责人数',output,input,el('small',{class:'muted'},'0 人：不作为成行条件；最多 10 人。'));
 }
-function renderEventForm(existing){state.detailVisible=false;state.pendingEvent=null;if(!requireUser())return;const day=86400000, start=Math.ceil(Date.now()/900000)*900000+14*day;const defaults={minPeople:10,maxPeople:12,waitlist:true,recruitmentDeadline:start-2*day,startsAt:start,endsAt:start+2*3600000,registrationDeadline:start-3600000,promotionDeadline:start-3600000,repairMinutes:60,venueRequired:true,minTalks:0,minCohosts:0,minHosts:1,allowRoleOverlap:true,continuousVenue:true,continuousTalks:false,continuousCohosts:false,continuousHosts:true,addressVisibility:'participants'};const r=existing?.rules||defaults;const editor=slotEditor(r.timeSlots||[{id:crypto.randomUUID(),startsAt:r.startsAt,endsAt:r.endsAt}]);const f=el('form',{class:'wide-form'},el('a',{class:'back',href:existing?`#event/${existing.id}`:'#',onclick:existing?e=>{e.preventDefault();renderDetail(existing);}:undefined},'← 返回'),el('h1',{},existing?'编辑聚会草稿':'从一个想聊的话题开始'),el('p',{class:'muted'},'先保存为草稿，再预览发布。把成行规则讲清楚，让每个人都知道自己的承诺。'));f.append(el('div',{class:'panel'},field('聚会标题','title','text',existing?.title||''),field('城市','city','text',existing?.city||'Amsterdam'),field('聚会介绍：聊什么，适合谁，如何安排','description','textarea',existing?.description||'')));const advancedTimes=el('details',{class:'advanced-times'},el('summary',{},'高级设置：报名与递补截止'),el('p',{class:'muted'},'成行后仍可报名；有人退出时，可在递补截止前自动邀请候补。'),el('div',{class:'form-grid'},timeField('停止接受报名','registrationDeadline',r.registrationDeadline),timeField('停止自动递补','promotionDeadline',r.promotionDeadline)));
-const times=el('fieldset',{},el('legend',{},'01 / 相聚时间'),el('p',{class:'muted'},'以下均为荷兰当地时间。'),el('h3',{},'1. 选择候选日期和时段'),editor.root,el('h3',{},'2. 最晚何时决定活动能否成行'),timeField('成行决定期限','recruitmentDeadline',r.recruitmentDeadline),el('p',{class:'muted'},'请在此之前确认最终时段。到期时，系统按人数、场地等条件决定是否成行。'),el('p',{class:'muted'},'报名截止：'+date(r.registrationDeadline)+'；递补截止：'+date(r.promotionDeadline)+'。可在高级设置中调整。'),advancedTimes);const rules=el('fieldset',{},el('legend',{},'02 / 固定成行条件'),el('p',{class:'muted'},'这些规则在发布后锁定。主持人需本人报名并由发起人确认。'),el('div',{class:'form-grid'},peopleRange(r.minPeople,r.maxPeople),hostRange(r.minHosts),el('div',{},field('条件不足后，最多等多久（分钟）','repairMinutes','number',r.repairMinutes),el('small',{class:'muted'},'活动成行后，需补齐的条件不足时开始倒计时。补齐后继续；超时仍不足则自动取消，最迟等到活动开始。'))),repairChoice('满员后允许候补？','waitlist',r.waitlist,'是 · 可加入候补','否 · 满员后停止报名'),repairChoice('成行前必须确认足够大的场地？','venueRequired',r.venueRequired,'是 · 容量须覆盖人数上限','否 · 场地不作为成行条件'),);const continuous=el('fieldset',{},el('legend',{},'03 / 成行后，条件不足怎么办'),repairChoice('场地撤回或容量不足时，自动启动限时补齐？','continuousVenue',r.continuousVenue),repairChoice('已确认主持人人数不足时，自动启动限时补齐？','continuousHosts',r.continuousHosts),el('p',{class:'form-note'},'选择「是」时，使用上方「条件不足后，最多等多久」的时长。选择「否」时，该项不足不会触发自动取消。成行前仍会检查已设定的要求。'),el('label',{class:'field'},'场地地址可见范围',el('select',{name:'addressVisibility'},el('option',{value:'participants',selected:r.addressVisibility==='participants'},'有权限的活动参与者'),el('option',{value:'public',selected:r.addressVisibility==='public'},'所有人'))));const save=el('button',{class:'button dark',type:'submit'},existing?'保存草稿':'保存草稿，进入预览 →');f.append(times,rules,continuous,save);attachTimeValidation(f,amsterdamMs);f.addEventListener('invalid',ev=>{const details=ev.target.closest('details');if(details)details.open=true;},true);f.querySelectorAll('input[type=number]').forEach(n=>{n.min=['minTalks','minCohosts','minHosts'].includes(n.name)?'0':'1';n.step='1';});f.onsubmit=async ev=>{ev.preventDefault();save.disabled=true;try{const fd=new FormData(f);const rr={};for(const [k,v] of Object.entries(r)){if(['timeSlots','startsAt','endsAt'].includes(k))continue;if(typeof v==='boolean')rr[k]=['continuousVenue','continuousHosts','waitlist','venueRequired'].includes(k)?fd.get(k)==='yes':fd.has(k);else if(['startsAt','endsAt','recruitmentDeadline','registrationDeadline','promotionDeadline'].includes(k))rr[k]=amsterdamMs(fd.get(k),fd.get(k+'Offset'));else if(typeof v==='number')rr[k]=Number(fd.get(k));else rr[k]=fd.get(k);}rr.minTalks=0;rr.minCohosts=0;rr.continuousTalks=false;rr.continuousCohosts=false;rr.allowRoleOverlap=true;rr.timeSlots=editor.read();rr.startsAt=rr.timeSlots[0].startsAt;rr.endsAt=rr.timeSlots[0].endsAt;if(!(rr.recruitmentDeadline<rr.startsAt&&rr.startsAt<rr.endsAt))throw new Error('请确保征集截止早于开始时间，结束时间晚于开始时间。');if(['registrationDeadline','promotionDeadline'].some(k=>rr[k]<rr.recruitmentDeadline||rr[k]>=rr.startsAt))throw new Error('报名和递补截止须不早于征集截止，且早于最早候选时段。');if(rr.minPeople>rr.maxPeople)throw new Error('最低人数不能超过人数上限。');const data={title:fd.get('title').trim(),city:fd.get('city').trim(),description:fd.get('description').trim(),rules:rr};if(existing){await command('edit',data);}else{const response=await api('/api/events',data);location.hash=`event/${response.event.id}`;toast('草稿已保存，请预览并确认发布。');}}catch(err){errorAt(f,err);}finally{save.disabled=false;}};app.replaceChildren(f);window.scrollTo({top:0});}
+function renderEventForm(existing){state.detailVisible=false;state.pendingEvent=null;if(!requireUser())return;const day=86400000, start=Math.ceil(Date.now()/900000)*900000+14*day;const defaults={minPeople:10,maxPeople:12,waitlist:true,recruitmentDeadline:start-2*day,startsAt:start,endsAt:start+2*3600000,registrationDeadline:start-3600000,promotionDeadline:start-3600000,repairMinutes:60,venueRequired:true,minTalks:0,minCohosts:0,minHosts:1,allowRoleOverlap:true,continuousVenue:true,continuousTalks:false,continuousCohosts:false,continuousHosts:true,addressVisibility:'participants'};const r=existing?.rules||defaults;const editor=slotEditor(r.timeSlots||[{id:crypto.randomUUID(),startsAt:r.startsAt,endsAt:r.endsAt}]);const f=el('form',{class:'wide-form'},el('a',{class:'back',href:existing?`#event/${existing.id}`:'#',onclick:existing?e=>{e.preventDefault();renderDetail(existing);}:undefined},'← 返回'),el('h1',{},existing?'编辑聚会草稿':'从一个想聊的话题开始'),el('p',{class:'muted'},'先保存为草稿，再预览发布。把成行规则讲清楚，让每个人都知道自己的承诺。'));f.append(el('div',{class:'panel'},field('聚会标题','title','text',existing?.title||''),field('城市','city','text',existing?.city||'Amsterdam'),field('聚会介绍：聊什么，适合谁，如何安排','description','textarea',existing?.description||'')));const tags=tagPicker(existing?.tags||[]);f.querySelector('.panel').append(tags.root);const advancedTimes=el('details',{class:'advanced-times'},el('summary',{},'高级设置：报名与递补截止'),el('p',{class:'muted'},'成行后仍可报名；有人退出时，可在递补截止前自动邀请候补。'),el('div',{class:'form-grid'},timeField('停止接受报名','registrationDeadline',r.registrationDeadline),timeField('停止自动递补','promotionDeadline',r.promotionDeadline)));
+const times=el('fieldset',{},el('legend',{},'01 / 相聚时间'),el('p',{class:'muted'},'以下均为荷兰当地时间。'),el('h3',{},'1. 选择候选日期和时段'),editor.root,el('h3',{},'2. 最晚何时决定活动能否成行'),timeField('成行决定期限','recruitmentDeadline',r.recruitmentDeadline),el('p',{class:'muted'},'请在此之前确认最终时段。到期时，系统按人数、场地等条件决定是否成行。'),el('p',{class:'muted'},'报名截止：'+date(r.registrationDeadline)+'；递补截止：'+date(r.promotionDeadline)+'。可在高级设置中调整。'),advancedTimes);const rules=el('fieldset',{},el('legend',{},'02 / 固定成行条件'),el('p',{class:'muted'},'这些规则在发布后锁定。主持人需本人报名并由发起人确认。'),el('div',{class:'form-grid'},peopleRange(r.minPeople,r.maxPeople),hostRange(r.minHosts),el('div',{},field('条件不足后，最多等多久（分钟）','repairMinutes','number',r.repairMinutes),el('small',{class:'muted'},'活动成行后，需补齐的条件不足时开始倒计时。补齐后继续；超时仍不足则自动取消，最迟等到活动开始。'))),repairChoice('满员后允许候补？','waitlist',r.waitlist,'是 · 可加入候补','否 · 满员后停止报名'),repairChoice('成行前必须确认足够大的场地？','venueRequired',r.venueRequired,'是 · 容量须覆盖人数上限','否 · 场地不作为成行条件'),);const continuous=el('fieldset',{},el('legend',{},'03 / 成行后，条件不足怎么办'),repairChoice('场地撤回或容量不足时，自动启动限时补齐？','continuousVenue',r.continuousVenue),repairChoice('已确认主持人人数不足时，自动启动限时补齐？','continuousHosts',r.continuousHosts),el('p',{class:'form-note'},'选择「是」时，使用上方「条件不足后，最多等多久」的时长。选择「否」时，该项不足不会触发自动取消。成行前仍会检查已设定的要求。'),el('label',{class:'field'},'场地地址可见范围',el('select',{name:'addressVisibility'},el('option',{value:'participants',selected:r.addressVisibility==='participants'},'有权限的活动参与者'),el('option',{value:'public',selected:r.addressVisibility==='public'},'所有人'))));const save=el('button',{class:'button dark',type:'submit'},existing?'保存草稿':'保存草稿，进入预览 →');f.append(times,rules,continuous,save);attachTimeValidation(f,amsterdamMs);f.addEventListener('invalid',ev=>{const details=ev.target.closest('details');if(details)details.open=true;},true);f.querySelectorAll('input[type=number]').forEach(n=>{n.min=['minTalks','minCohosts','minHosts'].includes(n.name)?'0':'1';n.step='1';});f.onsubmit=async ev=>{ev.preventDefault();save.disabled=true;try{const fd=new FormData(f);const rr={};for(const [k,v] of Object.entries(r)){if(['timeSlots','startsAt','endsAt'].includes(k))continue;if(typeof v==='boolean')rr[k]=['continuousVenue','continuousHosts','waitlist','venueRequired'].includes(k)?fd.get(k)==='yes':fd.has(k);else if(['startsAt','endsAt','recruitmentDeadline','registrationDeadline','promotionDeadline'].includes(k))rr[k]=amsterdamMs(fd.get(k),fd.get(k+'Offset'));else if(typeof v==='number')rr[k]=Number(fd.get(k));else rr[k]=fd.get(k);}rr.minTalks=0;rr.minCohosts=0;rr.continuousTalks=false;rr.continuousCohosts=false;rr.allowRoleOverlap=true;rr.timeSlots=editor.read();rr.startsAt=rr.timeSlots[0].startsAt;rr.endsAt=rr.timeSlots[0].endsAt;if(!(rr.recruitmentDeadline<rr.startsAt&&rr.startsAt<rr.endsAt))throw new Error('请确保征集截止早于开始时间，结束时间晚于开始时间。');if(['registrationDeadline','promotionDeadline'].some(k=>rr[k]<rr.recruitmentDeadline||rr[k]>=rr.startsAt))throw new Error('报名和递补截止须不早于征集截止，且早于最早候选时段。');if(rr.minPeople>rr.maxPeople)throw new Error('最低人数不能超过人数上限。');const data={tags:tags.read(),title:fd.get('title').trim(),city:fd.get('city').trim(),description:fd.get('description').trim(),rules:rr};if(existing){await command('edit',data);}else{const response=await api('/api/events',data);location.hash=`event/${response.event.id}`;toast('草稿已保存，请预览并确认发布。');}}catch(err){errorAt(f,err);}finally{save.disabled=false;}};app.replaceChildren(f);window.scrollTo({top:0});}
 function closeAI(){state.aiGeneration++;state.aiReviewPending=false;$('#ai-panel').hidden=true;state.proposal=null;$('#ai-messages').replaceChildren();$('#ai-input').value='';}
 function openAI(){if(!requireUser())return;$('#ai-panel').hidden=false;$('#ai-input').focus();}
 $('#ai-close').onclick=()=>{closeAI();applyPendingEvent();};

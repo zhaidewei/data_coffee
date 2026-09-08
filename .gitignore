@@ -9,3 +9,4 @@ app/.wrangler/
 app/build/
 app/.dev.vars*
 app/coverage/
+design/city-latte/*.png

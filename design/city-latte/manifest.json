@@ -1,0 +1,142 @@
+{
+  "prompt": "Use case: stylized-concept. Create ONE elegant city latte-art asset for a Data Coffee event card. Match the reference's warm illustrated top-down ceramic cappuccino cup, caramel coffee and ivory milk-foam landmark surrounded by a few graceful rosetta leaves. Single cup centered, handle at 3 o'clock, restrained texture, refined understated editorial illustration, ample margins, warm off-white background. Square composition. No saucer, no text, no labels, no extra objects. Landmark is made entirely of cream milk foam on coffee, simplified and readable at thumbnail size. Reference is style only; do not reproduce its four-panel layout. City and motif: ",
+  "cities": [
+    {
+      "slug": "groningen",
+      "city": "Groningen",
+      "motif": "Martini tower",
+      "url": "https://pub-80e888b848404fa086be09be4e975eb8.r2.dev/city-latte/v1/groningen.png"
+    },
+    {
+      "slug": "leeuwarden",
+      "city": "Leeuwarden",
+      "motif": "leaning square Oldehove tower",
+      "url": "https://pub-80e888b848404fa086be09be4e975eb8.r2.dev/city-latte/v1/leeuwarden.png"
+    },
+    {
+      "slug": "assen",
+      "city": "Assen",
+      "motif": "Drents Museum historic facade",
+      "url": "https://pub-80e888b848404fa086be09be4e975eb8.r2.dev/city-latte/v1/assen.png"
+    },
+    {
+      "slug": "zwolle",
+      "city": "Zwolle",
+      "motif": "Sassenpoort gate with twin pointed towers",
+      "url": "https://pub-80e888b848404fa086be09be4e975eb8.r2.dev/city-latte/v1/zwolle.png"
+    },
+    {
+      "slug": "lelystad",
+      "city": "Lelystad",
+      "motif": "Batavia sailing ship",
+      "url": "https://pub-80e888b848404fa086be09be4e975eb8.r2.dev/city-latte/v1/lelystad.png"
+    },
+    {
+      "slug": "arnhem",
+      "city": "Arnhem",
+      "motif": "John Frost arched bridge",
+      "url": "https://pub-80e888b848404fa086be09be4e975eb8.r2.dev/city-latte/v1/arnhem.png"
+    },
+    {
+      "slug": "utrecht",
+      "city": "Utrecht",
+      "motif": "Dom tower",
+      "url": "https://pub-80e888b848404fa086be09be4e975eb8.r2.dev/city-latte/v1/utrecht.png"
+    },
+    {
+      "slug": "haarlem",
+      "city": "Haarlem",
+      "motif": "De Adriaan windmill",
+      "url": "https://pub-80e888b848404fa086be09be4e975eb8.r2.dev/city-latte/v1/haarlem.png"
+    },
+    {
+      "slug": "den-haag",
+      "city": "Den Haag",
+      "motif": "Ridderzaal twin turret facade",
+      "url": "https://pub-80e888b848404fa086be09be4e975eb8.r2.dev/city-latte/v1/den-haag.png"
+    },
+    {
+      "slug": "middelburg",
+      "city": "Middelburg",
+      "motif": "Lange Jan abbey tower",
+      "url": "https://pub-80e888b848404fa086be09be4e975eb8.r2.dev/city-latte/v1/middelburg.png"
+    },
+    {
+      "slug": "den-bosch",
+      "city": "’s-Hertogenbosch",
+      "motif": "Saint John cathedral silhouette",
+      "url": "https://pub-80e888b848404fa086be09be4e975eb8.r2.dev/city-latte/v1/den-bosch.png"
+    },
+    {
+      "slug": "maastricht",
+      "city": "Maastricht",
+      "motif": "Sint Servaas stone arch bridge",
+      "url": "https://pub-80e888b848404fa086be09be4e975eb8.r2.dev/city-latte/v1/maastricht.png"
+    },
+    {
+      "slug": "amsterdam",
+      "city": "Amsterdam",
+      "motif": "three canal houses",
+      "url": "https://pub-80e888b848404fa086be09be4e975eb8.r2.dev/city-latte/v1/amsterdam.png"
+    },
+    {
+      "slug": "rotterdam",
+      "city": "Rotterdam",
+      "motif": "Erasmus cable stayed bridge",
+      "url": "https://pub-80e888b848404fa086be09be4e975eb8.r2.dev/city-latte/v1/rotterdam.png"
+    },
+    {
+      "slug": "delft",
+      "city": "Delft",
+      "motif": "Oostpoort twin gate towers",
+      "url": "https://pub-80e888b848404fa086be09be4e975eb8.r2.dev/city-latte/v1/delft.png"
+    },
+    {
+      "slug": "leiden",
+      "city": "Leiden",
+      "motif": "De Valk windmill",
+      "url": "https://pub-80e888b848404fa086be09be4e975eb8.r2.dev/city-latte/v1/leiden.png"
+    },
+    {
+      "slug": "enschede",
+      "city": "Enschede",
+      "motif": "Twente university Torentje tower",
+      "url": "https://pub-80e888b848404fa086be09be4e975eb8.r2.dev/city-latte/v1/enschede.png"
+    },
+    {
+      "slug": "wageningen",
+      "city": "Wageningen",
+      "motif": "sprouting plant with two leaves and a subtle open book",
+      "url": "https://pub-80e888b848404fa086be09be4e975eb8.r2.dev/city-latte/v1/wageningen.png"
+    },
+    {
+      "slug": "eindhoven",
+      "city": "Eindhoven",
+      "motif": "Philips light bulb with delicate circuit branches",
+      "url": "https://pub-80e888b848404fa086be09be4e975eb8.r2.dev/city-latte/v1/eindhoven.png"
+    },
+    {
+      "slug": "tilburg",
+      "city": "Tilburg",
+      "motif": "textile factory roof and chimney",
+      "url": "https://pub-80e888b848404fa086be09be4e975eb8.r2.dev/city-latte/v1/tilburg.png"
+    },
+    {
+      "slug": "nijmegen",
+      "city": "Nijmegen",
+      "motif": "Waal arch bridge",
+      "url": "https://pub-80e888b848404fa086be09be4e975eb8.r2.dev/city-latte/v1/nijmegen.png"
+    },
+    {
+      "slug": "heerlen",
+      "city": "Heerlen",
+      "motif": "Glaspaleis modern glass building",
+      "url": "https://pub-80e888b848404fa086be09be4e975eb8.r2.dev/city-latte/v1/heerlen.png"
+    }
+  ],
+  "default": {
+    "slug": "default",
+    "motif": "heart and rosetta leaves",
+    "url": "https://pub-80e888b848404fa086be09be4e975eb8.r2.dev/city-latte/v1/default.png"
+  }
+}
