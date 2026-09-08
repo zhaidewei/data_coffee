@@ -19,6 +19,7 @@ export interface Rules {
   minPeople: number; maxPeople: number; waitlist: boolean;
   recruitmentDeadline: number; startsAt: number; endsAt: number;
   registrationDeadline: number; promotionDeadline: number;
+  registrationLeadHours?: number; promotionLeadHours?: number;
   repairMinutes: number;
   venueRequired: boolean; minTalks: number; minCohosts: number; minHosts: number;
   allowRoleOverlap: boolean; continuousVenue: boolean; continuousTalks: boolean;
@@ -28,6 +29,8 @@ export interface Rules {
 export interface Participant {
   userId: string; status: 'joined'|'waitlisted'|'left'; appliedAt: number; order: number;
   availableSlotIds?: string[]; timePreference?: string; placePreference?: string; transportPreferences?: string[]; registrationMessage?: string;
+  promotionOfferUntil?: number;
+  promotionOfferExpired?: boolean;
   registrationReply?: string; registrationRepliedAt?: number;
 }
 export interface Application { id: string; userId: string; kind: 'cohost'|'host'|'talk'|'venue'|'material'|'pledge'; title: string; detail: string; capacity?: number; address?: string; amount?: number; duration?: number; status: 'pending'|'approved'|'rejected'|'withdrawn'; reason?: string; reviewedBy?: string; updatedAt: number }

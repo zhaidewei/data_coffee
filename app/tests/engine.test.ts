@@ -1,5 +1,5 @@
 import {describe,it,expect} from 'vitest';
-import {applyCommand,conditions,createActivity,normalizeTags,reconcile,isManager} from '../worker/engine';
+import {applyCommand,conditions,createActivity,normalizeTags,reconcile,isManager,nextDue} from '../worker/engine';
 import type {Activity,Notice,Rules} from '../worker/types';
 const t=Date.UTC(2026,8,5,10);
 const rules=(r:Partial<Rules>={}):Rules=>({minPeople:3,maxPeople:3,waitlist:true,recruitmentDeadline:t+3600000,startsAt:t+7200000,endsAt:t+10800000,registrationDeadline:t+6900000,promotionDeadline:t+6900000,repairMinutes:10,venueRequired:false,minTalks:0,minCohosts:0,minHosts:0,allowRoleOverlap:true,continuousVenue:true,continuousTalks:true,continuousCohosts:true,continuousHosts:true,addressVisibility:'participants',...r});
@@ -45,3 +45,106 @@ it('规范化标签并拒绝无效输入',()=>{
  for(const value of ['SQL',[''],['<script>'],['a'.repeat(21)],Array(6).fill('a')])expect(()=>normalizeTags(value)).toThrow();
 });
 it('介绍更新可复用标签且不改变成行规则',()=>{const e=event(),before=structuredClone(e.rules);act(e,'describe','owner',t+1000,{description:'聊 AI',tags:['AI','ai','职场']});expect(e.tags).toEqual(['ai','职场']);expect(e.rules).toEqual(before);expect(()=>act(e,'describe','other',t+2000,{description:'改写',tags:['创业']})).toThrow();expect(e.tags).toEqual(['ai','职场']);act(e,'describe','owner',t+3000,{description:'继续聊'});expect(e.tags).toEqual(['ai','职场']);});
+it('超过8人必须确认场地，8人可选',()=>{expect(event({maxPeople:8}).rules.venueRequired).toBe(false);const e=event({maxPeople:9});expect(e.rules.venueRequired).toBe(true);expect(conditions(e).find(c=>c.key==='venue')?.required).toBe(9);for(const u of ['a','b','c'])act(e,'join',u);reconcile(e,t+3600000,[]);expect(e.status).toBe('cancelled');});
+it('旧草稿发布时补上大场地要求',()=>{const e=createActivity({title:'旧草稿',city:'Amsterdam',rules:rules({maxPeople:9})},'owner',t);e.rules.venueRequired=false;applyCommand(e,{action:'publish'},'owner',t,[]);expect(e.rules.venueRequired).toBe(true);});
+
+describe('相对截止与候补确认',()=>{
+ const hour=3600000;
+ const relative=()=>event({startsAt:t+72*hour,endsAt:t+74*hour,registrationLeadHours:24,promotionLeadHours:4,repairMinutes:10080});
+ it('按最终候选日期重新计算截止',()=>{
+  const timeSlots=[{id:'early',startsAt:t+72*hour,endsAt:t+74*hour},{id:'late',startsAt:t+144*hour,endsAt:t+146*hour}];
+  const e=event({...relative().rules,timeSlots});
+  expect(e.rules.registrationDeadline).toBe(t+48*hour);
+  act(e,'select_time','owner',t+2000,{slotId:'late'});
+  expect(e.rules.registrationDeadline).toBe(t+120*hour);
+  expect(e.rules.promotionDeadline).toBe(t+140*hour);
+ });
+ it('候补名额保留但不计入人数，报名截止后仍可本人确认',()=>{
+  const e=relative();for(const u of ['a','b','c','d'])act(e,'join',u);
+  const out=act(e,'leave','a',t+49*hour);
+  expect(e.participants[3]).toMatchObject({status:'waitlisted',promotionOfferUntil:t+68*hour});
+  expect(conditions(e).find(c=>c.key==='people')?.current).toBe(2);
+  expect(out.filter(n=>n.subject==='有候补名额，请确认参加')).toHaveLength(1);
+  const repeated:Notice[]=[];reconcile(e,t+49*hour+1,repeated);expect(repeated).toHaveLength(0);
+  act(e,'join','newcomer',t+49*hour+2);expect(e.participants.at(-1)?.status).toBe('waitlisted');
+  act(e,'join','d',t+49*hour+3);
+  expect(e.participants[3].status).toBe('joined');expect(e.participants[3].promotionOfferUntil).toBeUndefined();
+  expect(e.status).toBe('confirmed');
+ });
+ it('退出候补立即释放保留名额给下一位',()=>{
+  const e=relative();for(const u of ['a','b','c','d','f'])act(e,'join',u);
+  act(e,'leave','a',t+2*hour);act(e,'leave','d',t+2*hour+1);
+  expect(e.participants[3].promotionOfferUntil).toBeUndefined();
+  expect(e.participants[4]).toMatchObject({status:'waitlisted',promotionOfferUntil:t+68*hour});
+ });
+ it('截止之后不会凭过期邀请接受名额',()=>{
+  const e=relative();for(const u of ['a','b','c','d'])act(e,'join',u);
+  act(e,'leave','a',t+67*hour);
+  expect(()=>act(e,'join','d',t+68*hour)).toThrow('候补确认已截止');
+ });
+ it.each([-1,169,1.5,NaN])('拒绝无效提前小时数 %s',n=>expect(()=>event({...relative().rules,registrationLeadHours:n})).toThrow());
+});
+
+it('候补邀请的确认期限不晚于人数补齐期限',()=>{const h=3600000;const e=event({startsAt:t+72*h,endsAt:t+74*h,registrationLeadHours:24,promotionLeadHours:4,repairMinutes:60});for(const u of ['a','b','c','d'])act(e,'join',u);act(e,'leave','a',t+2*h);expect(e.participants[3].promotionOfferUntil).toBe(t+3*h);expect(e.repairs[0].deadline).toBe(t+3*h);});
+
+describe('候补邀请的容量与提前过期边界',()=>{
+ const h=3600000;
+ const setup=()=>{const e=event({maxPeople:4,startsAt:t+72*h,endsAt:t+74*h,registrationLeadHours:24,promotionLeadHours:4,repairMinutes:60});for(const u of ['a','b','c','d','e','f','g'])act(e,'join',u);return e;};
+ it('后续人数不足会收紧已有邀请期限并通知，未确认邀请不能解除补齐',()=>{
+  const e=setup();act(e,'leave','a',t+2*h);
+  expect(e.participants[4].promotionOfferUntil).toBe(t+68*h);
+  const out=act(e,'leave','b',t+2*h+1000),deadline=t+3*h+1000;
+  expect(e.participants[4].promotionOfferUntil).toBe(deadline);
+  expect(e.participants[5].promotionOfferUntil).toBe(deadline);
+  expect(e.status).toBe('repairing');expect(conditions(e).find(c=>c.key==='people')?.current).toBe(2);
+  expect(out.some(n=>n.userId==='e'&&n.subject==='候补确认期限已更新')).toBe(true);
+  const repeated:Notice[]=[];reconcile(e,t+2*h+1001,repeated);expect(repeated).toHaveLength(0);
+  expect(()=>act(e,'join','e',deadline)).toThrow('结束或取消');
+  expect(e.status).toBe('cancelled');expect(e.receipts.at(-1)?.at).toBe(deadline);
+ });
+ it('恢复人数后提前过期的保留名额自动递给下一位，不重复唤醒或通知',()=>{
+  const e=setup();act(e,'leave','a',t+2*h);act(e,'leave','b',t+2*h+1000);
+  act(e,'join','e',t+2*h+2000);expect(e.status).toBe('confirmed');
+  const deadline=t+3*h+1000;expect(nextDue(e)).toBe(deadline);
+  const out:Notice[]=[];reconcile(e,deadline,out);
+  expect(e.participants[5]).toMatchObject({status:'waitlisted',promotionOfferUntil:deadline});
+  expect(e.participants[6]).toMatchObject({status:'waitlisted',promotionOfferUntil:t+68*h});
+  expect(out.filter(n=>n.subject==='有候补名额，请确认参加')).toHaveLength(1);
+  expect(nextDue(e)).toBe(t+68*h);
+  const repeated:Notice[]=[];reconcile(e,deadline+1,repeated);expect(repeated).toHaveLength(0);
+  expect(()=>act(e,'join','f',deadline+2)).toThrow('候补确认已截止');
+  act(e,'join','new',deadline+3);expect(e.participants.at(-1)?.status).toBe('waitlisted');
+  act(e,'join','g',deadline+4);expect(e.participants.filter(p=>p.status==='joined')).toHaveLength(4);
+  expect(nextDue(e)).toBe(e.rules.endsAt);
+ });
+ it('过期者退出再报名会清理旧邀请标记，重新排队后的邀请仍安排定时器',()=>{
+  const e=setup();act(e,'leave','a',t+2*h);act(e,'leave','b',t+2*h+1000);act(e,'join','e',t+2*h+2000);
+  const deadline=t+3*h+1000;reconcile(e,deadline,[]);
+  act(e,'leave','f',deadline+1);act(e,'join','f',deadline+2);
+  expect(e.participants[5].promotionOfferExpired).toBeUndefined();
+  act(e,'leave','g',deadline+3);
+  expect(e.participants[5].promotionOfferUntil).toBe(t+68*h);expect(nextDue(e)).toBe(t+68*h);
+ });
+ it('征集阶段发出的邀请在征集截止同步过期，不留下过去的定时器',()=>{
+  const e=event({maxPeople:4,promotionLeadHours:1});for(const u of ['a','b','c','d','e'])act(e,'join',u);
+  act(e,'leave','a',t+2000);expect(nextDue(e)).toBe(e.rules.recruitmentDeadline);
+  reconcile(e,e.rules.recruitmentDeadline,[]);expect(e.status).toBe('confirmed');
+  expect(e.participants[4]).toMatchObject({status:'waitlisted',promotionOfferExpired:true});
+  expect(nextDue(e)).toBe(e.rules.endsAt);
+ });
+ it('到邀请截止时间解除保留后，定时器推进到下一业务截止',()=>{
+  const e=setup();act(e,'leave','a',t+2*h);expect(nextDue(e)).toBe(t+68*h);
+  const out:Notice[]=[];reconcile(e,t+68*h,out);
+  expect(nextDue(e)).toBe(e.rules.endsAt);
+  expect(out.filter(n=>n.subject==='有候补名额，请确认参加')).toHaveLength(0);
+  expect(()=>act(e,'join','e',t+68*h)).toThrow('候补确认已截止');
+ });
+ it('提前小时数为零允许到开始前确认，开始时拒绝',()=>{
+  const e=event({maxPeople:4,promotionLeadHours:0,registrationLeadHours:0});
+  for(const u of ['a','b','c','d','e'])act(e,'join',u);
+  act(e,'leave','a',t+3700000);expect(e.participants[4].promotionOfferUntil).toBe(e.rules.startsAt);
+  const justBefore=structuredClone(e);act(justBefore,'join','e',e.rules.startsAt-1);
+  expect(justBefore.participants[4].status).toBe('joined');
+  expect(()=>act(e,'join','e',e.rules.startsAt)).toThrow('活动已开始');
+ });
+});

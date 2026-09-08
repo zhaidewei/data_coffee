@@ -107,3 +107,9 @@ describe('个人访问令牌认证',()=>{
     const r=await invoke(['auth','me','--base-url','http://example.com'],undefined,{DATA_COFFEE_TOKEN:token});expect(r.code).toBe(2);expect(r.fetch).not.toHaveBeenCalled();
   });
 });
+
+it('CLI 保留相对截止、人数和候选时段数据',async()=>{
+ const payload={title:'周末 coffee chat',city:'Amstelveen',tags:['AI'],rules:{minPeople:3,maxPeople:8,minHosts:0,waitlist:true,repairMinutes:60,registrationLeadHours:24,promotionLeadHours:4,addressVisibility:'public',timeSlots:[{id:'sat',startsAt:1790416800000,endsAt:1790427600000}]}};
+ const r=await invoke(['events','create','--data','-'],undefined,{},JSON.stringify(payload));
+ expect(r.code).toBe(0);expect(JSON.parse(r.fetch.mock.calls[0][1].body)).toEqual(payload);
+});
