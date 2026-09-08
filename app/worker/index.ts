@@ -5,6 +5,7 @@ import {currentUser,handleAuth,handleTokens} from './auth';
 import {drainMail} from './mail';
 import {handleAI} from './ai';
 import {body} from './http';
+import {listEvents} from './list';
 export {body} from './http';
 
 const json=(data:unknown,status=200)=>Response.json(data,{status});
@@ -35,10 +36,7 @@ export default {
           res=json({tags:rows.results.map(row=>row.label)});
         }
         else if(url.pathname==='/api/events'&&request.method==='GET'){
-          const rows=await env.DB.prepare("SELECT id FROM activities WHERE json_extract(document,'$.status')!='draft' OR json_extract(document,'$.ownerId')=? ORDER BY created_at DESC LIMIT 200").bind(user?.id??null).all<{id:string}>();
-          const events=[];
-          for(const row of rows.results){const e=await advance(context,row.id);if(e.status!=='draft'||e.ownerId===user?.id)events.push(await project(context,e,user,true));}
-          res=json({events,user:user?{id:user.id,nickname:user.nickname,publicNickname:user.publicNickname}:null});
+          res=json(await listEvents(context,user,url.searchParams));
         }else if(url.pathname==='/api/events'&&request.method==='POST'){
           if(!user)fail('请先验证邮箱登录',401);
           const b=await body(request);

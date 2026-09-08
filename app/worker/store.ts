@@ -48,12 +48,25 @@ async function advanceOnce(env:Env,id:string,clock:()=>number):Promise<Activity>
   }
   return fail('活动正在更新，请稍后刷新',409);
 }
-export async function execute(env:Env,id:string,cmd:Command,user:User,key:string,version?:number,clock=Date.now):Promise<Activity>{
+async function canReplayJoin(env:Env,old:Activity,cmd:Command,user:User,version:number):Promise<boolean>{
+  // Only a first registration can ignore unrelated first-party activity versions.
+  // Audit history proves that no newer personal intent or management decision is
+  // being overwritten, including a time selection before the first load.
+  if(cmd.action!=='join'||!Number.isSafeInteger(version)||version<0||version>=old.version||old.participants.some(p=>p.userId===user.id))return false;
+  const history=await env.DB.prepare("SELECT count(*) AS total, sum(CASE WHEN action='join' AND actor_id<>? THEN 1 ELSE 0 END) AS safe FROM audit WHERE event_id=? AND version>? AND version<=?").bind(user.id,old.id,version,old.version).first<{total:number;safe:number}>();
+  return history?.total===old.version-version&&history.safe===history.total;
+}
+export async function execute(env:Env,id:string,cmd:Command,user:User,key:string,version?:number,clock=Date.now,options:{strictVersion?:boolean}={}):Promise<Activity>{
   if(!key||key.length>100||!/^[A-Za-z0-9:_-]+$/.test(key))fail('需要有效的操作幂等标识');
-  for(let retry=0;retry<12;retry++){
+  // Ten attempts cost at most 40 statements on the ordinary registration path
+  // (load, audit-range check, CAS, audit insert); reconciliation/notices are extra.
+  for(let retry=0;retry<10;retry++){
+    // Spread competing isolates across a bounded retry window, instead of
+    // repeatedly sending all losers back to D1 in the same wave.
+    if(retry)await new Promise(resolve=>setTimeout(resolve,Math.floor((0.5+Math.random())*Math.min(2000,100*2**(retry-1)))));
     const old=await advance(env,id,clock);
     if(old.processed.some(p=>p.key===key&&p.userId===user.id))return old;
-    if(version!==undefined&&version!==old.version)fail('活动状态已变化，请刷新后重新确认',409);
+    if(version!==undefined&&version!==old.version&&(options.strictVersion||!await canReplayJoin(env,old,cmd,user,version)))fail('活动状态已变化，请刷新后重新确认',409);
     const now=clock();
     // Time can cross while loading or retrying: settle again before mutation.
     if(nextDue(old)!==null&&nextDue(old)!<=now)continue;

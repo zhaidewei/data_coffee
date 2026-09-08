@@ -8,7 +8,7 @@ let mf: Miniflare; let env: Env;
 beforeAll(async () => {
   mf = new Miniflare(convertV4MiniflareOptions({ name: 'auth', modules: true, script: 'export default {fetch(){return new Response("test")}}', compatibilityDate: '2026-09-05', d1Databases: { DB: 'auth-test' } }));
   const DB = await mf.getD1Database('DB') as unknown as D1Database;
-  for (const file of ['0001_events.sql', '0002_identity.sql']) {
+  for (const file of ['0001_events.sql', '0002_identity.sql', '0006_mail_digest.sql']) {
     const sql = (await readFile(new URL(`../migrations/${file}`, import.meta.url), 'utf8')).replace(/--[^\n]*/g, '');
     for (const statement of sql.split(';').map(s => s.trim()).filter(Boolean)) await DB.prepare(statement).run();
   }
@@ -16,7 +16,7 @@ beforeAll(async () => {
 });
 afterAll(async () => { await mf?.dispose(); });
 beforeEach(async () => {
-  for (const table of ['auth_sessions', 'auth_codes', 'auth_rate_limits', 'mail_dispatch', 'mail_daily_budget', 'outbox', 'users']) await env.DB.prepare(`DELETE FROM ${table}`).run();
+  for (const table of ['auth_sessions', 'auth_codes', 'auth_rate_limits', 'mail_payload', 'mail_dispatch', 'mail_daily_budget', 'outbox', 'users']) await env.DB.prepare(`DELETE FROM ${table}`).run();
 });
 afterEach(() => vi.unstubAllGlobals());
 const req = (path: string, data?: unknown, options: { host?: string; cookie?: string; origin?: string; method?: string } = {}) => new Request(`${options.host || 'http://localhost:8787'}${path}`, {
