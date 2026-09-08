@@ -1,3 +1,4 @@
+import {copyPng,sharePng} from './image-sharing.js';
 import {localParts,amsterdamMs,weekendCoffeeTemplate,popularity,peopleStops,peopleScale} from './event-models.js';
 import {cityPicker} from './city-picker.js';
 import {cityCoffee,defaultCoffee} from './city-coffee.js';
@@ -96,14 +97,26 @@ async function shareCard(e){
     label('活动安排与状态以页面最新信息为准。',215,y,12,'#65776c');
     return Math.ceil(y+48);
   }
-  const height=paint(false);canvas.width=1290;canvas.height=height*3;ctx.scale(3,3);
-  ctx.fillStyle='#edf4fb';ctx.fillRect(0,0,430,height);ctx.fillStyle='#fffdf7';ctx.fillRect(15,12,400,height-36);ctx.fillStyle='#00b86b';ctx.fillRect(15,12,400,6);
+  const height=paint(false);canvas.width=1200;canvas.height=(height-36)*3;ctx.scale(3,3);ctx.translate(-15,-12);
+  ctx.fillStyle='#fffdf7';ctx.fillRect(15,12,400,height-36);ctx.fillStyle='#00b86b';ctx.fillRect(15,12,400,6);
   paint(true);
-  ctx.fillStyle='#edf4fb';for(let x=15;x<415;x+=16){ctx.beginPath();ctx.moveTo(x,height-24);ctx.lineTo(x+8,height-32);ctx.lineTo(x+16,height-24);ctx.fill();}
+  ctx.save();ctx.globalCompositeOperation='destination-out';for(let x=15;x<415;x+=16){ctx.beginPath();ctx.moveTo(x,height-24);ctx.lineTo(x+8,height-32);ctx.lineTo(x+16,height-24);ctx.fill();}ctx.restore();
   return new Promise((resolve,reject)=>canvas.toBlob(blob=>blob?resolve(blob):reject(new Error('分享图生成失败')),'image/png'));
 }
 async function copyText(value){if(navigator.clipboard?.writeText)return navigator.clipboard.writeText(value);const input=el('textarea',{value});document.body.append(input);input.select();document.execCommand('copy');input.remove();}
-async function shareEvent(e){const url=activityUrl(e),actions=el('div',{class:'share-actions'}),content=el('div',{class:'share-dialog'},el('h2',{},'分享这场活动'),el('p',{class:'muted'},'把活动链接发给朋友，或分享带二维码的邀请图。'),el('div',{class:'share-preview loading'},'正在生成分享图…'),actions);modal(content);try{const blob=await shareCard(e),objectUrl=URL.createObjectURL(blob),preview=el('img',{src:objectUrl,alt:`${e.title}活动分享图，包含二维码`}),file=new File([blob],`data-coffee-${e.id}.png`,{type:'image/png'}),canShareImage=Boolean(navigator.share&&navigator.canShare?.({files:[file]}));content.querySelector('.share-preview').replaceChildren(preview);const linkAction=navigator.share?btn('分享活动链接',()=>navigator.share({title:e.title,text:`${e.title} · ${e.city}`,url}).catch(error=>{if(error.name!=='AbortError')toast(error.message);})) : btn('复制活动链接',async()=>{await copyText(url);toast('活动链接已复制');});const imageAction=canShareImage?btn('分享二维码图片',()=>navigator.share({files:[file],title:e.title,text:`${e.title} · ${e.city}`}).catch(error=>{if(error.name!=='AbortError')toast(error.message);}), 'button dark') : el('a',{class:'button dark',href:objectUrl,download:file.name},'下载二维码图片');actions.append(linkAction,imageAction);$('#modal').addEventListener('close',()=>URL.revokeObjectURL(objectUrl),{once:true});}catch(error){errorAt(content,error);}}
+async function shareEvent(e){
+ const url=activityUrl(e),actions=el('div',{class:'share-actions'}),content=el('div',{class:'share-dialog'},el('h2',{},'分享这场活动'),el('p',{class:'muted'},'复制邀请图发给朋友，或分享活动链接。'),el('div',{class:'share-preview loading'},'正在生成分享图…'),actions);modal(content);
+ try{
+  const blob=await shareCard(e),objectUrl=URL.createObjectURL(blob),file=new File([blob],`data-coffee-${e.id}.png`,{type:'image/png'});
+  content.querySelector('.share-preview').replaceChildren(el('img',{src:objectUrl,alt:`${e.title}活动分享图，包含二维码`}));
+  const action=(label,task,cls='button')=>{const button=btn(label,async()=>{if(button.disabled)return;button.disabled=true;try{await task();}catch(error){if(error.name!=='AbortError')toast(error.message);}finally{button.disabled=false;}},cls);return button;};
+  actions.append(action('复制活动链接',async()=>{await copyText(url);toast('活动链接已复制');}));
+  if(navigator.clipboard?.write&&globalThis.ClipboardItem)actions.append(action('复制图片',async()=>{await copyPng(blob);toast('已复制一张邀请图');},'button dark'));
+  if(navigator.share&&navigator.canShare?.({files:[file]}))actions.append(action('更多分享方式',()=>sharePng(file)));
+  actions.append(el('a',{class:'button',href:objectUrl,download:file.name},'下载图片'));
+  $('#modal').addEventListener('close',()=>URL.revokeObjectURL(objectUrl),{once:true});
+ }catch(error){errorAt(content,error);}
+}
 function countdown(ms){let sec=Math.floor((ms-Date.now())/1000);if(sec<=0)return'已到截止时间';const d=Math.floor(sec/86400);sec%=86400;return`${d?d+' 天 ':''}${String(Math.floor(sec/3600)).padStart(2,'0')} : ${String(Math.floor(sec%3600/60)).padStart(2,'0')} : ${String(sec%60).padStart(2,'0')}`;}
 setInterval(()=>document.querySelectorAll('[data-countdown]').forEach(n=>n.textContent=countdown(Number(n.dataset.countdown))),1000);
 function updateAccount(){$('#account-button .account-label').textContent=state.user?'账户':'登录';$('#account-button').title=state.user?state.user.nickname:'登录 / 注册';}
