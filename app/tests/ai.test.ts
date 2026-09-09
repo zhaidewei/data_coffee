@@ -81,6 +81,22 @@ describe('AI confirmation boundaries',()=>{
     await execute(env,e.id,{action:'join'},user('other'),'other-join');const before=await load(env,e.id);
     await expect(confirm(proposal.id)).rejects.toMatchObject({status:409});expect(await load(env,e.id)).toEqual(before);
   });
+  it('确认读取后发生报名竞争，CAS重试仍要求提案原版本',async()=>{
+    const e=await published();modelCall();const proposal=await propose(e.id);const audit=await count('audit');
+    let interrupted=false;
+    const DB={
+      prepare(sql:string){return env.DB.prepare(sql);},
+      async batch(statements:D1PreparedStatement[]){
+        if(!interrupted){interrupted=true;await execute(env,e.id,{action:'join'},user('other'),'racing-join',e.version);}
+        return env.DB.batch(statements);
+      }
+    } as unknown as D1Database;
+    await expect(handleAI(req('/api/ai/confirm',{proposalId:proposal.id}),{...env,DB},member)).rejects.toMatchObject({status:409});
+    expect(interrupted).toBe(true);
+    const after=await load(env,e.id);expect(after.participants.map(p=>p.userId)).toEqual(['other']);
+    expect(after.processed.some(p=>p.key===`ai:${proposal.id}`)).toBe(false);
+    expect(await count('audit')).toBe(audit+1);expect(await count('outbox')).toBe(0);
+  });
   it('concurrent and repeated confirmations create exactly one membership/audit',async()=>{
     const e=await published();modelCall();const proposal=await propose(e.id);const audit=await count('audit');
     const confirmations=await Promise.all([confirm(proposal.id),confirm(proposal.id)]);expect(confirmations.map(r=>r!.status)).toEqual([200,200]);

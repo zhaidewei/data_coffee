@@ -5,3 +5,5 @@ export function monthRange(mode,now=Date.now()) {const [year,month]=localDay(now
 export function eventSlots(event){const slots=event.rules.timeSlots||[];if(event.selectedSlotId){const selected=slots.find(s=>s.id===event.selectedSlotId);return selected?[selected]:[{startsAt:event.rules.startsAt,endsAt:event.rules.endsAt}];}return slots.length?slots:[{startsAt:event.rules.startsAt,endsAt:event.rules.endsAt}];}
 export function matchesTime(event,range){if(!range)return true;return eventSlots(event).some(s=>Number.isFinite(s.startsAt)&&Number.isFinite(s.endsAt)&&localDay(s.startsAt)<=range.to&&localDay(s.endsAt-1)>=range.from);}
 export function filterEvents(events,city,range){return events.filter(e=>(city==='全部'||e.city===city)&&matchesTime(e,range));}
+
+export function overviewQuery(state,range){const params=new URLSearchParams({page:String(state.page),pageSize:'12'});if(state.city!=='全部')params.set('city',state.city);if(state.selectedTag)params.set('tag',state.selectedTag);if(range){params.set('from',range.from);params.set('to',range.to);}return params.toString();}

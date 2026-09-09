@@ -1,10 +1,12 @@
 #!/usr/bin/env node
+import {monthlyTemplate} from './template.mjs';
 import {readFile,realpath} from 'node:fs/promises';
 import {pathToFileURL} from 'node:url';
 
 export const help = `Data Coffee CLI（Node.js 22+）
 用法：dc-flow <命令> [选项]
-  events list
+  events template --data <JSON|@文件|->    本地生成指定月份周日草稿，不发布
+  events list                             自动读取全部分页
   events get <id>
   events create --data <JSON|@文件|->       创建草稿
   events action <id> <action> --version <整数> --key <幂等键> [--data <JSON|@文件|->]
@@ -20,6 +22,8 @@ export const help = `Data Coffee CLI（Node.js 22+）
       --help
 action：edit describe publish select_time join leave apply review withdraw revoke cancel
 成功 stdout JSON；错误 stderr JSON。退出码：0成功，1网络/服务端，2输入，3认证/权限，4冲突。
+template 输入：{title,city,month:"2026-09",start:"13:00",durationMinutes:150,minPeople:4,maxPeople:8,description,tags}。
+输出 {event,skippedDates}；将 event 交给 events create，预览后 action publish。过往周日自动跳过。
 请求不自动重试。create API 不支持幂等；action 重试必须复用 --key 和原始参数。`;
 
 class CliError extends Error {constructor(message,exitCode=2,status){super(message);this.exitCode=exitCode;this.status=status;}}
@@ -39,6 +43,11 @@ export async function run(argv, io={}) {
       opts[arg]=argv[++i];
     }
     const [group,command,id,action]=pos;
+    if(group==='events'&&command==='template'&&pos.length===2){
+      if(!opts['--data']||Object.keys(opts).some(k=>k!=='--data'))throw new CliError('template 仅接受 --data');
+      const source=opts['--data'];let input;try{input=JSON.parse(source==='-'?await stdin():source.startsWith('@')?await readFile(source.slice(1),'utf8'):source);if(!input||typeof input!=='object'||Array.isArray(input))throw Error();}catch{throw new CliError('模板须为 JSON 对象');}
+      try{out(JSON.stringify(monthlyTemplate(input,io.now??Date.now()))+'\n');return 0;}catch(e){throw new CliError(e.message);}
+    }
     let path,method='GET',payload;
     if(group==='events'&&command==='list'&&pos.length===2)path='/api/events';
     else if(group==='events'&&command==='get'&&pos.length===3)path=`/api/events/${id}`;
@@ -80,9 +89,26 @@ export async function run(argv, io={}) {
     const body=payload?JSON.stringify(payload):undefined;
     if(body&&Buffer.byteLength(body)>(group==='auth'?4096:32000))throw new CliError('请求体过大');
     if(body)headers['Content-Type']='application/json';
-    let response;try{response=await fetcher(new URL(path,base),{method,headers,body,redirect:'error',signal:AbortSignal.timeout(30000)});}catch{throw new CliError('网络请求失败或超时；写入结果可能未知，请核实后重试',1);}
-    let data;try{data=await response.json();}catch{throw new CliError('API 未返回 JSON',1,response.status);}
-    if(!response.ok)throw new CliError(typeof data.error==='string'?data.error:'API 请求失败',[401,403].includes(response.status)?3:response.status===409?4:1,response.status);
+    async function requestPage(requestPath){
+      let response;try{response=await fetcher(new URL(requestPath,base),{method,headers,body,redirect:'error',signal:AbortSignal.timeout(30000)});}catch{throw new CliError('网络请求失败或超时；写入结果可能未知，请核实后重试',1);}
+      let data;try{data=await response.json();}catch{throw new CliError('API 未返回 JSON',1,response.status);}
+      if(!response.ok)throw new CliError(typeof data.error==='string'?data.error:'API 请求失败',[401,403].includes(response.status)?3:response.status===409?4:1,response.status);
+      return {response,data};
+    }
+    let {response,data}=await requestPage(path);
+    if(group==='events'&&command==='list'&&data.pagination){
+      const first=data,events=[],ids=new Set(),size=data.pagination.pageSize,total=data.pagination.total;let expected=1;
+      while(true){
+        const p=data.pagination;
+        if(!p||p.page!==expected||p.pageSize!==size||p.total!==total||!Array.isArray(data.events)||!Number.isSafeInteger(total)||total<0||!Number.isSafeInteger(size)||size<1||size>20||p.totalPages!==Math.max(1,Math.ceil(total/size)))throw new CliError('列表分页发生变化或无效，请重新读取',1);
+        if(data.events.length!==Math.min(size,Math.max(0,total-(expected-1)*size)))throw new CliError('列表分页不完整，请重新读取',1);
+        for(const event of data.events){if(typeof event.id!=='string'||ids.has(event.id))throw new CliError('列表分页发生变化或重复，请重新读取',1);ids.add(event.id);events.push(event);}
+        if(p.nextPage===null){if(expected!==p.totalPages||events.length!==total)throw new CliError('列表分页不完整，请重新读取',1);break;}
+        if(p.nextPage!==expected+1||p.nextPage>p.totalPages)throw new CliError('列表分页顺序无效',1);
+        expected=p.nextPage;({data}=await requestPage('/api/events?'+new URLSearchParams({page:String(expected),pageSize:String(size)})));
+      }
+      const {pagination,overview,...baseData}=first;data={...baseData,events,total,complete:true};
+    }
     if(opts['--session-only']){
       const token=response.headers.get('set-cookie')?.match(/(?:^|;\s*)dc_session=([a-f0-9]{64})(?:;|$)/)?.[1];
       if(!token)throw new CliError('登录响应缺少会话',1);

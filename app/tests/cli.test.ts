@@ -107,3 +107,15 @@ describe('个人访问令牌认证',()=>{
     const r=await invoke(['auth','me','--base-url','http://example.com'],undefined,{DATA_COFFEE_TOKEN:token});expect(r.code).toBe(2);expect(r.fetch).not.toHaveBeenCalled();
   });
 });
+
+it('CLI 保留相对截止、人数和候选时段数据',async()=>{
+ const payload={title:'周末 coffee chat',city:'Amstelveen',tags:['AI'],rules:{minPeople:3,maxPeople:8,minHosts:0,waitlist:true,repairMinutes:60,registrationLeadHours:24,promotionLeadHours:4,addressVisibility:'public',timeSlots:[{id:'sat',startsAt:1790416800000,endsAt:1790427600000}]}};
+ const r=await invoke(['events','create','--data','-'],undefined,{},JSON.stringify(payload));
+ expect(r.code).toBe(0);expect(JSON.parse(r.fetch.mock.calls[0][1].body)).toEqual(payload);
+});
+
+it('CLI 模板只生成未来周日，不联网或自动发布',async()=>{
+ let output='';const fetch=vi.fn();const code=await run(['events','template','--data',JSON.stringify({title:'周日下午咖啡',city:'Amstelveen',month:'2026-09',start:'13:00',durationMinutes:150,minPeople:4,maxPeople:8})],{now:Date.parse('2026-09-08T19:00Z'),env:{},fetch,stdout:(s:string)=>output+=s});
+ expect(code).toBe(0);expect(fetch).not.toHaveBeenCalled();const result=JSON.parse(output);expect(result.skippedDates).toEqual(['2026-09-06']);expect(result.event.rules.timeSlots.map((s:any)=>new Date(s.startsAt).toISOString())).toEqual(['2026-09-13T11:00:00.000Z','2026-09-20T11:00:00.000Z','2026-09-27T11:00:00.000Z']);expect(result.event.rules.timeSlots.every((s:any)=>s.endsAt-s.startsAt===9000000)).toBe(true);
+});
+it('CLI 模板拒绝无效人数和日期',async()=>{for(const changes of [{month:'2026-13'},{maxPeople:2},{durationMinutes:0}]){const result=await invoke(['events','template','--data',JSON.stringify({title:'咖啡',city:'Amstelveen',month:'2026-09',...changes})]);expect(result.code).toBe(2);expect(result.fetch).not.toHaveBeenCalled();}});

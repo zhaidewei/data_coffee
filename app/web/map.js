@@ -68,7 +68,7 @@ export async function mountMap(container,events,selectedCity,onSelect) {
       const place=await locate(city,controller.signal);if(!alive())return;
       if(place.error){issues.add(place.error);update();return;}
       if(place.approximate)issues.add('定位服务暂不可用，四个常用城市使用预设市中心位置。');
-      const count=events.filter(e=>e.city===city).length;
+      const count=events.filter(e=>e.city===city).reduce((sum,e)=>sum+(e.count??1),0);
       const label=document.createElement('span');label.className='map-marker-label'+(city==='Den Haag'?' label-west':'');label.textContent=`${city} · ${count}`;
       const marker=L.marker(place.coords,{keyboard:true,title:`${city}，${count} 场活动`,alt:`选择 ${city}`,icon:L.divIcon({className:'activity-city-marker'+(selectedCity===city?' is-selected':''),html:label,iconSize:[18,18],iconAnchor:[9,9]})}).addTo(map);
       marker.on('click',()=>onSelect(city));

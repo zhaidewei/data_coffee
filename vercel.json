@@ -1,7 +1,0 @@
-{
-  "buildCommand": "npm run build",
-  "outputDirectory": "public",
-  "rewrites": [
-    { "source": "/:path*", "destination": "/index.html" }
-  ]
-}

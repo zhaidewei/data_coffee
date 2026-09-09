@@ -232,7 +232,7 @@ D01–D06 中仍有效的决定及 D08–D13 的上述原则已确认；D04a、D
 
 专用本地代码库：`/Users/zhaidewei/SHUJUQUN/data_coffee_terminal`。本文为该仓库 `docs/requirements-mvp.md`，作为需求评审的主版本。
 
-现有 `design.md` 描述旧版 MCP 社区撮合方案，是历史设计输入，不能视为当前 MVP 需求。先前会话产生的 `data-coffee-design.md` 是探索草案；本文确认后，以本文的产品范围为准。`~/dams-meetup` 的 README 表明其定位为活动现场互动，复用价值留待系统设计阶段评估。
+旧版 MCP 社区撮合方案及代码入口已经退休，不能视为当前 MVP 需求。先前会话产生的 `data-coffee-design.md` 是探索草案；本文确认后，以本文的产品范围为准。`~/dams-meetup` 的 README 表明其定位为活动现场互动，复用价值留待系统设计阶段评估。
 
 当前仅交付需求草案，未冻结范围、未修改业务代码、未上线。下一步是产品负责人逐项评审范围；之后再编写系统设计和测试用例。
 

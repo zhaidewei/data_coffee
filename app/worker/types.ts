@@ -19,6 +19,7 @@ export interface Rules {
   minPeople: number; maxPeople: number; waitlist: boolean;
   recruitmentDeadline: number; startsAt: number; endsAt: number;
   registrationDeadline: number; promotionDeadline: number;
+  registrationLeadHours?: number; promotionLeadHours?: number;
   repairMinutes: number;
   venueRequired: boolean; minTalks: number; minCohosts: number; minHosts: number;
   allowRoleOverlap: boolean; continuousVenue: boolean; continuousTalks: boolean;
@@ -28,12 +29,16 @@ export interface Rules {
 export interface Participant {
   userId: string; status: 'joined'|'waitlisted'|'left'; appliedAt: number; order: number;
   availableSlotIds?: string[]; timePreference?: string; placePreference?: string; transportPreferences?: string[]; registrationMessage?: string;
+  promotionOfferUntil?: number;
+  promotionOfferExpired?: boolean;
+  registrationReply?: string; registrationRepliedAt?: number;
 }
 export interface Application { id: string; userId: string; kind: 'cohost'|'host'|'talk'|'venue'|'material'|'pledge'; title: string; detail: string; capacity?: number; address?: string; amount?: number; duration?: number; status: 'pending'|'approved'|'rejected'|'withdrawn'; reason?: string; reviewedBy?: string; updatedAt: number }
 export interface Condition { key: string; label: string; current: number; required: number; satisfied: boolean; continuous: boolean }
 export interface Repair { key: string; label: string; openedAt: number; deadline: number }
 export interface Receipt { at: number; kind: string; conditions: Condition[]; reason: string; descriptionChange?: {before: string; after: string} }
 export interface Activity {
+  tags?: string[];
   id: string; ownerId: string; title: string; city: string; description: string;
   selectedSlotId?: string; rules: Rules; status: Status; version: number; createdAt: number; publishedAt?: number;
   participants: Participant[]; applications: Application[]; repairs: Repair[];

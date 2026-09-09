@@ -13,7 +13,7 @@ export async function handleAI(request:Request,env:Env,user:User|null):Promise<R
     const id=textValue(b!.proposalId,'操作确认标识',100);
     const p=await env.DB.prepare('SELECT * FROM ai_proposals WHERE id=? AND user_id=?').bind(id,user!.id).first<{id:string;event_id:string;action:string;version:number;expires_at:number}>();
     if(!p||p.expires_at<=Date.now())fail('操作确认已过期，请重新询问',409);
-    const e=await execute(env,p.event_id,{action:p.action},user!,`ai:${p.id}`,p.version);
+    const e=await execute(env,p.event_id,{action:p.action},user!,`ai:${p.id}`,p.version,Date.now,{strictVersion:true});
     return Response.json({event:await project(env,e,user)});
   }
   const eventId=textValue(b!.eventId,'活动标识',100);const message=textValue(b!.message,'消息',1500);
