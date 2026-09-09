@@ -2,6 +2,8 @@ import type {Activity, Command, Env, Notice, User} from './types';
 import {applyCommand, conditions, createActivity, DomainError, fail, isManager, joined, nextDue, reconcile} from './engine';
 import {decodeActivityDocument,encodeActivityDocument} from './activity-schema';
 import {CronBudget,CronBudgetExceeded} from './cron-budget';
+// @ts-expect-error Dependency-free JavaScript shared with the browser.
+import {canonicalCity} from '../web/city-catalog.js';
 
 async function loadRecord(env:Env,id:string):Promise<{activity:Activity;document:string}> {
   const row=await env.DB.prepare('SELECT id,version,document,created_at FROM activities WHERE id=?').bind(id).first<{id:string;version:number;document:string;created_at:number}>();
@@ -98,7 +100,7 @@ export async function project(env:Env,e:Activity,user:User|null,summary=false):P
   const manager=!!user&&isManager(e,user.id);const mine=e.participants.find(p=>p.userId===user?.id)??null;
   if(e.status==='draft'&&e.ownerId!==user?.id)fail('活动不存在',404);
   const addressAllowed=e.rules.addressVisibility==='public'||manager||mine?.status==='joined';
-  const base:Record<string,unknown>={id:e.id,tags:e.tags||[],title:e.title,city:e.city,description:e.description,selectedSlotId:e.selectedSlotId,rules:e.rules,status:e.status,version:e.version,createdAt:e.createdAt,publishedAt:e.publishedAt,reason:e.reason,counts:{joined:joined(e).length,waitlisted:e.participants.filter(p=>p.status==='waitlisted').length},conditions:conditions(e),repairs:e.repairs,canManage:manager,isOwner:user?.id===e.ownerId};
+  const base:Record<string,unknown>={id:e.id,tags:e.tags||[],title:e.title,city:canonicalCity(e.city)||e.city,description:e.description,selectedSlotId:e.selectedSlotId,rules:e.rules,status:e.status,version:e.version,createdAt:e.createdAt,publishedAt:e.publishedAt,reason:e.reason,counts:{joined:joined(e).length,waitlisted:e.participants.filter(p=>p.status==='waitlisted').length},conditions:conditions(e),repairs:e.repairs,canManage:manager,isOwner:user?.id===e.ownerId};
   if(summary)return base;
   const publisher=await env.DB.prepare('SELECT nickname,public_nickname FROM users WHERE id=?').bind(e.ownerId).first<{nickname:string;public_nickname:number}>();
   base.publisher={nickname:publisher&&(publisher.public_nickname||manager)?publisher.nickname.trim()||'未设置昵称':'匿名成员'};

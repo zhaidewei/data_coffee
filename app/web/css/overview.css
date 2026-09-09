@@ -25,11 +25,6 @@
 .overview-event:hover { background: #1c273a; border-color: #49719e; box-shadow: none; }
 .overview-event h3 { font-size: 15px; }
 .overview-description { color: #a6b4c7; margin: 9px 0; }
-.real-map { border-color: #39475b; border-radius: 4px; }
-.real-map-status { background: #202b3e; color: #b9c8da; }
-.real-map .leaflet-control-attribution { color: #283b47; background: #ffffffed; }
-.real-map .leaflet-control-attribution a { color: #14548a; }
-.real-map .leaflet-control-zoom a { background: #fff; color: #263d53; }
 .overview-dates input { background: #141c2a; color: var(--ink); border-color: #3c4c63; border-radius: 4px; }
 .coffee-dags-title .airflow-joke { color: var(--muted); font-weight: 400; text-decoration-thickness: 2px; text-decoration-color: var(--orange); }
 .overview-heading .coffee-dags-title { line-height: 1.4; overflow-wrap: normal; }
@@ -81,7 +76,6 @@
   .overview-heading .eyebrow { display: none; }
   .overview-heading p { font-size: 11px; line-height: 1.5; }
   .overview-controls { padding: 8px; margin-bottom: 12px; }
-  .overview-geography .real-map-canvas { height: 410px; }
   .overview-event-heading { display: grid; gap: 10px; }
   .overview-heading-meta,
   .overview-heading-meta .event-tags { justify-content: flex-start; }

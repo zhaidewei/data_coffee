@@ -2,7 +2,11 @@ import {describe,it,expect} from 'vitest';
 // @ts-ignore shared browser model
 import {localParts,amsterdamMs,weekendCoffeeTemplate,popularity,participationSummary,overviewAction,overviewTiming} from '../web/event-models.js';
 // @ts-ignore browser city catalog
+import {cityCatalog,cityCoordinates,canonicalCity} from '../web/city-catalog.js';
+// @ts-ignore browser city picker
 import {cityGroups} from '../web/city-picker.js';
+// @ts-ignore browser map geometry helpers
+import {layoutCityLabels,outlinePath,outlineProjection} from '../web/map.js';
 import {validateRules} from '../worker/engine';
 describe('人气按报名和候补计算',()=>{
  const read=(joined:number,waitlisted:number,maxPeople=8)=>popularity({counts:{joined,waitlisted},rules:{maxPeople}});
@@ -42,6 +46,31 @@ describe('周末模板的荷兰当地日期和业务有效性',()=>{
  it('夏令时不存在的时刻拒绝；重复时刻可选早晚',()=>{expect(()=>amsterdamMs('2026-03-29T02:30')).toThrow();expect(amsterdamMs('2026-10-25T02:30','late')-amsterdamMs('2026-10-25T02:30')).toBe(3600000);});
 });
 it('城市优先级稳定，新增城市去重并按字母排序',()=>{const g=cityGroups(['zz City','Amsterdam','Almere','aa City']);expect(g[0][1]).toEqual(['Amsterdam','Rotterdam','Den Haag','Utrecht','Amstelveen']);expect(g[1][1]).toContain('Hoofddorp');expect(g[1][1]).toContain('Zaandam');expect(g[2][1]).not.toContain('Amsterdam');expect(g[2][1].filter((x:string)=>x==='Almere')).toHaveLength(1);expect(g[2][1]).toEqual([...g[2][1]].sort((a:string,b:string)=>a.localeCompare(b,'nl')));});
+describe('城市矢量地图',()=>{
+ it('城市选择器的全部地点都有本地荷兰坐标',()=>{
+  const catalog=cityGroups().flatMap((group:any)=>group[1] as string[]),located=Object.keys(cityCoordinates);
+  expect(new Set(located)).toEqual(new Set(catalog));
+  for(const city of catalog){const [lat,lon]=cityCoordinates[city];expect(lat,city).toBeGreaterThanOrEqual(50);expect(lat,city).toBeLessThanOrEqual(54);expect(lon,city).toBeGreaterThanOrEqual(3);expect(lon,city).toBeLessThanOrEqual(8);}
+ });
+ it('别名统一为目录名称，Zaanstad 与 Zaandam 保持独立',()=>{
+  expect(cityCatalog).toHaveLength(38);
+  expect(['The Hague',"'s-Gravenhage",'s gravenhage','海牙'].map(canonicalCity)).toEqual(Array(4).fill('Den Haag'));
+  expect(['Den Bosch',"'s-Hertogenbosch",'’s-Hertogenbosch','登博斯'].map(canonicalCity)).toEqual(Array(4).fill('’s-Hertogenbosch'));
+  expect(canonicalCity('Zaanstad')).toBe('Zaanstad');expect(canonicalCity('Zaandam')).toBe('Zaandam');expect(canonicalCity('未知城市')).toBeNull();
+ });
+ it('把多块陆地投影到固定高清 SVG 画布',()=>{
+  const geometry={type:'GeometryCollection',geometries:[{type:'MultiPolygon',coordinates:[[[[3,51],[7,51],[7,54],[3,54],[3,51]]]]}]};
+  const project=outlineProjection(geometry),path=outlinePath(geometry,project),corners=[[51,3],[54,7]].map(point=>project(point)) as number[][];
+  expect(path).toMatch(/^M/);expect(path).toContain(' Z');
+  for(const [x,y] of corners){expect(x).toBeGreaterThanOrEqual(28);expect(x).toBeLessThanOrEqual(612);expect(y).toBeGreaterThanOrEqual(28);expect(y).toBeLessThanOrEqual(472);}
+ });
+ it('密集城市只保留不重叠的标签，其余位置点仍可显示',()=>{
+  const cities=Array.from({length:36},(_,index)=>({city:`城市${index}`,label:`城市${index} · 1`,count:1,x:300+(index%6),y:240+Math.floor(index/6)}));
+  const shown=layoutCityLabels(cities).map((city:any)=>city.box).filter(Boolean) as {x:number,y:number,width:number,height:number}[];
+  expect(shown.length).toBeGreaterThan(0);expect(shown.length).toBeLessThan(cities.length);
+  for(let i=0;i<shown.length;i++)for(let j=i+1;j<shown.length;j++)expect(shown[i].x<shown[j].x+shown[j].width+4&&shown[i].x+shown[i].width+4>shown[j].x&&shown[i].y<shown[j].y+shown[j].height+4&&shown[i].y+shown[i].height+4>shown[j].y).toBe(false);
+ });
+});
 // @ts-ignore shared browser mapping
 import {peopleScale} from '../web/event-models.js';
 it('非线性人数轴保留全部整数，始终单调且可逆',()=>{let previous=-1;for(let n=3;n<=100;n++){const position=peopleScale(n,0,1);expect(position).toBeGreaterThan(previous);expect(Math.round(peopleScale(position,1,0))).toBe(n);previous=position;}expect(peopleScale(3,0,1)).toBe(0);expect(peopleScale(10,0,1)).toBe(55);expect(peopleScale(100,0,1)).toBe(100);});

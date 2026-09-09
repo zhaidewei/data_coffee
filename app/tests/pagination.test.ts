@@ -32,6 +32,7 @@ describe('活动服务端分页',()=>{
   const aiCity=await list('city=Utrecht');expect(aiCity.overview.cities).toContainEqual({city:'Amsterdam',count:25});expect(aiCity.overview.tags).toContainEqual({label:'AI',count:0});
   const own=await list('city=Rotterdam',user);expect(own.events.map(e=>e.id)).toEqual(['event-032']);expect(JSON.stringify(own)).not.toContain('SECRET');
  });
+ it('历史城市别名在列表、筛选和地图统计中合并',async()=>{await seed([item(0,{city:'The Hague'}),item(1,{city:'海牙'}),item(2,{city:'Den Haag'})]);const all=await list();expect(all.overview.cities).toEqual([{city:'Den Haag',count:3}]);expect(all.overview.allCities).toEqual(['Den Haag']);expect(all.events.map(e=>e.city)).toEqual(['Den Haag','Den Haag','Den Haag']);expect((await list('city=The Hague')).pagination.total).toBe(3);expect((await list('city=Den Haag')).pagination.total).toBe(3);});
  it('候选时段与最终时段遵循Amsterdam跨日匹配，并且过滤能命中后续页',async()=>{
   const slot={id:'future',startsAt:Date.parse('2026-10-31T23:00:00Z'),endsAt:Date.parse('2026-11-01T02:00:00Z')};
   await seed([item(0,{rules:{...rules,timeSlots:[{id:'first',startsAt:rules.startsAt,endsAt:rules.endsAt},slot]}}),...Array.from({length:20},(_,i)=>item(i+1))]);
