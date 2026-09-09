@@ -39,6 +39,7 @@ export interface Condition { key: string; label: string; current: number; requir
 export interface Repair { key: string; label: string; openedAt: number; deadline: number }
 export interface Receipt { at: number; kind: string; conditions: Condition[]; reason: string; descriptionChange?: {before: string; after: string} }
 export interface Activity {
+  schemaVersion: 1;
   tags?: string[];
   id: string; ownerId: string; title: string; city: string; description: string;
   selectedSlotId?: string; rules: Rules; status: Status; version: number; createdAt: number; publishedAt?: number;

@@ -17,7 +17,7 @@ const rules=(slots,overrides={})=>({
   addressVisibility:'participants',...overrides,
 });
 const activity=(id,ownerId,title,city,status,slots,extra={})=>({
-  id,ownerId,title,city,tags:city==='Amsterdam'?['AI','职场','求职']:city==='Rotterdam'?['创业','组队']:['荷兰语','融入考试'],description:`本地开发样例：${title}`,
+  schemaVersion:1,id,ownerId,title,city,tags:city==='Amsterdam'?['AI','职场','求职']:city==='Rotterdam'?['创业','组队']:['荷兰语','融入考试'],description:`本地开发样例：${title}`,
   rules:rules(slots,extra.rules),status,version:extra.version??1,createdAt:now-2*day,
   publishedAt:status==='draft'?undefined:now-day,participants:extra.participants??[],
   applications:extra.applications??[],repairs:[],receipts:[],sequence:extra.sequence??0,

@@ -1,4 +1,5 @@
 import type { Activity, Application, Command, Condition, Notice, Participant, Rules } from './types';
+import {ACTIVITY_SCHEMA_VERSION} from './activity-schema';
 
 export class DomainError extends Error {
   constructor(message: string, public status = 400) { super(message); }
@@ -35,7 +36,7 @@ export function validateRules(input: unknown, now: number): Rules {
   return Object.fromEntries([...ints.map(x=>x[0]), 'recruitmentDeadline','startsAt','endsAt','registrationDeadline','promotionDeadline',...(r.registrationLeadHours!==undefined?['registrationLeadHours']:[]),...(r.promotionLeadHours!==undefined?['promotionLeadHours']:[]),'waitlist','venueRequired','allowRoleOverlap','continuousVenue','continuousTalks','continuousCohosts','continuousHosts','addressVisibility',...(r.timeSlots?['timeSlots']:[])].map(k => [k,(r as any)[k]])) as unknown as Rules;
 }
 export function createActivity(input: Record<string,unknown>, ownerId: string, now: number, id = crypto.randomUUID()): Activity {
-  return {id,ownerId,tags:normalizeTags(input.tags),title:textValue(input.title,'标题',100),city:textValue(input.city,'城市',80),description:textValue(input.description??'','介绍',4000,0),rules:validateRules(input.rules,now),status:'draft',version:0,createdAt:now,participants:[],applications:[],repairs:[],receipts:[],sequence:0,processed:[]};
+  return {schemaVersion:ACTIVITY_SCHEMA_VERSION,id,ownerId,tags:normalizeTags(input.tags),title:textValue(input.title,'标题',100),city:textValue(input.city,'城市',80),description:textValue(input.description??'','介绍',4000,0),rules:validateRules(input.rules,now),status:'draft',version:0,createdAt:now,participants:[],applications:[],repairs:[],receipts:[],sequence:0,processed:[]};
 }
 export function normalizeTags(input:unknown):string[]{
   if(input===undefined)return [];
