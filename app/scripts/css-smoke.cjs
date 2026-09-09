@@ -23,7 +23,7 @@ const user = { id: 'smoke-user', nickname: '测试成员', publicNickname: true 
     try {
         for (const width of [375, 600, 601, 900, 1280])
             for (const theme of ['dark', 'light'])
-                for (const view of ['home', 'form', 'detail', 'focus', 'dialog', 'capacity', 'capacity-venue', 'cli']) {
+                for (const view of ['home', 'form', 'detail', 'focus', 'dialog', 'capacity', 'capacity-venue', 'capacity-blocked', 'cli']) {
                     const context = await browser.newContext({ viewport: { width, height: 900 }, deviceScaleFactor: 1 });
                     const page = await context.newPage();
                     let errors = [];
@@ -38,11 +38,13 @@ const user = { id: 'smoke-user', nickname: '测试成员', publicNickname: true 
                             ? {...event,isOwner:true,status:'confirmed',rules:{...rules,maxPeople:7}}
                             : view === 'capacity-venue'
                                 ? {...event,isOwner:true,status:'confirmed',rules:{...rules,maxPeople:8,venueRequired:true},applications:[{id:'venue',kind:'venue',status:'approved',title:'大桌',capacity:12}]}
+                                : view === 'capacity-blocked'
+                                    ? {...event,isOwner:true,status:'confirmed',rules:{...rules,maxPeople:12,venueRequired:true}}
                                 : event;
                         let data = u.pathname === '/api/me' ? { user } : u.pathname === '/api/tags' ? { tags: ['AI', 'Data'] } : u.pathname === '/api/events/css-smoke' ? { event: ownerEvent } : { events: [event], user, pagination: { page: 1, pageSize: 12, total: 1, totalPages: 1, nextPage: null }, overview: { total: 1, cities: [{ city: 'Amsterdam', count: 1 }], tags: [{ label: 'AI', count: 1 }], allCities: ['Amsterdam'] } };
                         return route.fulfill({ json: data });
                     } return route.continue(); });
-                    const hash = { home: '', form: '#new', detail: '#event/css-smoke', focus: '#event/css-smoke', dialog: '#event/css-smoke', capacity: '#event/css-smoke', 'capacity-venue': '#event/css-smoke', cli: '#cli' }[view];
+                    const hash = { home: '', form: '#new', detail: '#event/css-smoke', focus: '#event/css-smoke', dialog: '#event/css-smoke', capacity: '#event/css-smoke', 'capacity-venue': '#event/css-smoke', 'capacity-blocked': '#event/css-smoke', cli: '#cli' }[view];
                     await page.goto(url + '/' + hash);
                     await page.locator(view === 'home' ? '.overview-event' : view === 'form' ? '.wide-form' : view === 'cli' ? '.cli-reference' : '.dag-node').first().waitFor({ timeout: 5000 }).catch(async (e) => { console.error(await page.locator('body').innerText()); throw e; });
                     await page.evaluate(theme => document.documentElement.dataset.theme = theme, theme);
@@ -67,13 +69,14 @@ const user = { id: 'smoke-user', nickname: '测试成员', publicNickname: true 
                         await page.locator('.dag-node').first().click();
                         await page.locator('dialog[open]').waitFor();
                     }
-                    if (view === 'capacity' || view === 'capacity-venue') {
+                    if (['capacity','capacity-venue','capacity-blocked'].includes(view)) {
                         await page.locator('.dag-node').first().click();
                         await page.getByRole('button',{name:'扩充名额'}).click();
                         await page.locator('dialog[open]').waitFor();
-                        assert.equal(await page.locator('dialog input[name=maxPeople]').inputValue(),view === 'capacity'?'8':'9');
-                        assert.equal(await page.locator('dialog input[name=maxPeople]').getAttribute('max'),view === 'capacity'?'8':'12');
-                        assert.match(await page.locator('dialog').innerText(),view === 'capacity'?/先确认可容纳新上限的场地/:/本次最多可扩至 12 人/);
+                        assert.equal(await page.locator('dialog input[name=maxPeople]').inputValue(),view === 'capacity'?'8':view === 'capacity-venue'?'9':'13');
+                        assert.equal(await page.locator('dialog input[name=maxPeople]').getAttribute('max'),view === 'capacity'?'8':view === 'capacity-venue'?'12':'13');
+                        assert.equal(await page.locator('dialog input[name=maxPeople]').isDisabled(),view === 'capacity-blocked');
+                        assert.match(await page.locator('dialog').innerText(),view === 'capacity-venue'?/本次最多可扩至 12 人/:/先确认可容纳新上限的场地/);
                     }
                     if (view === 'focus') {
                         await page.keyboard.press('Tab');
