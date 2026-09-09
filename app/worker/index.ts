@@ -7,6 +7,8 @@ import {handleAI} from './ai';
 import {body,secureResponse} from './http';
 import {listEvents} from './list';
 import {exportUserData} from './self-export';
+import {CronBudget} from './cron-budget';
+import {operations} from './operations';
 export {body} from './http';
 
 const json=(data:unknown,status=200)=>Response.json(data,{status});
@@ -28,6 +30,7 @@ export default {
       const auth=await handleTokens(request,env) ?? await handleAuth(request,env);
       if(auth)res=auth;
       else if(url.pathname==='/api/health')res=json({ok:true,environment:env.APP_ENV,version:env.APP_VERSION??'unknown'});
+      else if(url.pathname==='/api/health/operations'&&request.method==='GET')res=json(await operations(env));
       else {
         const user=await currentUser(request,env);
         const context={...env,APP_URL:env.APP_URL||url.origin};
@@ -73,5 +76,11 @@ export default {
     }
     return secureResponse(res,isApi);
   },
-  async scheduled(_event:ScheduledController,env:Env,_ctx:ExecutionContext){await tick(env);await drainMail(env,10);}
+  async scheduled(_event:ScheduledController,env:Env,_ctx:ExecutionContext){
+    const budget=new CronBudget();
+    const activity=await tick(env,budget);
+    const mail=await drainMail(budget.env(env,'mail'),Math.min(10,budget.remainingWork('mail')),Math.min(40,budget.remainingD1('mail')));
+    budget.recordWork('mail',mail.claimed);
+    console.log(JSON.stringify({event:'cron_completed',activity,mail,budget:budget.snapshot()}));
+  }
 } satisfies ExportedHandler<Env>;
