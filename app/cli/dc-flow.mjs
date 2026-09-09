@@ -20,9 +20,10 @@ export const help = `Data Coffee CLI（Node.js 22+）
       --session-stdin 从 stdin 读取会话（64位 token 或 {sessionToken} JSON）
       DATA_COFFEE_SESSION 环境变量提供会话；不接受命令行 token，不保存凭证。
       --help
-action：edit describe publish select_time join leave apply review withdraw revoke cancel
+action：edit describe raise_capacity publish select_time join leave apply review withdraw revoke cancel
 成功 stdout JSON；错误 stderr JSON。退出码：0成功，1网络/服务端，2输入，3认证/权限，4冲突。
 template 输入：{title,city,month:"2026-09",start:"13:00",durationMinutes:150,minPeople:4,maxPeople:8,description,tags}。
+raise_capacity 输入：{maxPeople:12}；仅发布者可在报名截止前将上限提高到 100。
 输出 {event,skippedDates}；将 event 交给 events create，预览后 action publish。过往周日自动跳过。
 请求不自动重试。create API 不支持幂等；action 重试必须复用 --key 和原始参数。`;
 

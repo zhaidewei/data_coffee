@@ -56,7 +56,8 @@ function validRepair(value:unknown):boolean {
 }
 function validReceipt(value:unknown):boolean {
   if(!record(value)||!integer(value.at)||!string(value.kind)||!list(value.conditions,validCondition)||!string(value.reason))return false;
-  return optional(value.descriptionChange,item=>record(item)&&string(item.before)&&string(item.after));
+  return optional(value.descriptionChange,item=>record(item)&&string(item.before)&&string(item.after))&&
+    optional(value.capacityChange,item=>record(item)&&integer(item.before)&&integer(item.after)&&Number(item.before)>=3&&Number(item.before)<Number(item.after)&&Number(item.after)<=100);
 }
 function validProcessed(value:unknown):boolean {
   return record(value)&&string(value.key)&&string(value.userId);

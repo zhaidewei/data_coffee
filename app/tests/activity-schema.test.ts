@@ -51,6 +51,12 @@ describe('Activity document codec',()=>{
     for(const broken of ['{',JSON.stringify({...e,schemaVersion:null}),JSON.stringify({...e,participants:{}}),JSON.stringify({...e,rules:{...e.rules,startsAt:'tomorrow'}})])
       errorCode(()=>decodeActivityDocument(broken),'activity_document_invalid');
   });
+  it('扩容回执只接受结构化安全整数',()=>{
+    const e=activity();e.receipts.push({at:now+1,kind:'capacity_expanded',conditions:[],reason:'扩容',capacityChange:{before:8,after:12}});
+    expect(decodeActivityDocument(encodeActivityDocument(e)).receipts.at(-1)?.capacityChange).toEqual({before:8,after:12});
+    for(const capacityChange of [{before:8.5,after:12},{before:8,after:'12'},{before:8},{before:8,after:8},{before:8,after:101}])
+      errorCode(()=>decodeActivityDocument(JSON.stringify({...e,receipts:[{...e.receipts.at(-1),capacityChange}]})),'activity_document_invalid');
+  });
 });
 
 it('0007 持久化升级缺失或显式为 0 的 v0，保留未来和畸形版本且可重复执行',async()=>{

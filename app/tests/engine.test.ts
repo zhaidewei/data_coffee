@@ -17,6 +17,51 @@ describe('确定性业务规则',()=>{
  it('候补截止不递补、可以退出',()=>{const e=event({maxPeople:3,promotionDeadline:t+3600000});for(const u of ['a','b','support','c'])act(e,'join',u);reconcile(e,t+3600000,[]);act(e,'leave','a',t+3700000);expect(e.participants.find(p=>p.userId==='c')?.status).toBe('waitlisted');act(e,'leave','c',t+3700010);expect(e.participants.find(p=>p.userId==='c')?.status).toBe('left');});
 });
 
+describe('发布后扩充人数上限',()=>{
+ it('征集中记录回执、通知成员并按 FIFO 直接递补',()=>{
+  const e=event();for(const id of ['a','b','c','d','f'])act(e,'join',id,t+1000);
+  const out=act(e,'raise_capacity','owner',t+2000,{maxPeople:5});
+  expect(e.rules.maxPeople).toBe(5);
+  expect(e.participants.map(p=>[p.userId,p.status])).toEqual([['a','joined'],['b','joined'],['c','joined'],['d','joined'],['f','joined']]);
+  expect(e.receipts.at(-1)).toMatchObject({kind:'capacity_expanded',capacityChange:{before:3,after:5}});
+  expect(out.filter(n=>n.kind==='capacity_expanded').map(n=>n.userId).sort()).toEqual(['a','b','c','d','f','owner']);
+  expect(out.filter(n=>n.kind==='promotion_confirmed').map(n=>n.userId)).toEqual(['d','f']);
+ });
+ it('沿用候补确认 offer，只向队首保留新增席位',()=>{
+  const e=event({promotionLeadHours:1});for(const id of ['a','b','c','d','f'])act(e,'join',id,t+1000);
+  const out=act(e,'raise_capacity','owner',t+2000,{maxPeople:4});
+  expect(e.participants.find(p=>p.userId==='d')).toMatchObject({status:'waitlisted',promotionOfferUntil:e.rules.promotionDeadline});
+  expect(e.participants.find(p=>p.userId==='f')?.promotionOfferUntil).toBeUndefined();
+  expect(out.filter(n=>n.kind==='promotion_offer').map(n=>n.userId)).toEqual(['d']);
+ });
+ it('校验发布者、整数增加、报名截止和候补截止',()=>{
+  const values=[3,2,3.5,101,'4',null];
+  for(const maxPeople of values)expect(()=>act(event(),'raise_capacity','owner',t+2000,{maxPeople})).toThrow();
+  expect(()=>act(event(),'raise_capacity','other',t+2000,{maxPeople:4})).toThrow('发布者');
+  const registrationClosed=event();for(const id of ['a','b','c'])act(registrationClosed,'join',id,t+1000);
+  expect(()=>act(registrationClosed,'raise_capacity','owner',registrationClosed.rules.registrationDeadline,{maxPeople:4})).toThrow('报名已截止');
+  const e=event({recruitmentDeadline:t+3000,promotionDeadline:t+4000});for(const id of ['a','b','c','d'])act(e,'join',id,t+1000);
+  expect(()=>act(e,'raise_capacity','owner',t+5000,{maxPeople:4})).toThrow('候补递补已截止');
+ });
+ it('征集扩至九人强制场地，已成行或补齐中要求现有场地覆盖',()=>{
+  const recruiting=event({maxPeople:8});act(recruiting,'raise_capacity','owner',t+2000,{maxPeople:9});
+  expect(recruiting.rules.venueRequired).toBe(true);expect(conditions(recruiting).find(c=>c.key==='venue')).toMatchObject({required:9,satisfied:false});
+
+  const confirmed=event({maxPeople:8});for(const id of ['a','b','c'])act(confirmed,'join',id,t+1000);reconcile(confirmed,confirmed.rules.recruitmentDeadline,[]);
+  expect(()=>act(confirmed,'raise_capacity','owner',t+3601000,{maxPeople:9})).toThrow('场地');
+  act(confirmed,'apply','venue-owner',t+3602000,{kind:'venue',title:'九人桌',detail:'',address:'地址',capacity:9});
+  act(confirmed,'review','owner',t+3603000,{applicationId:confirmed.applications[0].id,approved:true});
+  act(confirmed,'raise_capacity','owner',t+3604000,{maxPeople:9});expect(confirmed.rules.maxPeople).toBe(9);
+
+  act(confirmed,'leave','a',t+3605000);expect(confirmed.status).toBe('repairing');
+  expect(()=>act(confirmed,'raise_capacity','owner',t+3606000,{maxPeople:10})).toThrow('场地');
+ });
+ it('已成行且不要求场地时，八人以内扩容无需补场地',()=>{
+  const e=event({maxPeople:7});for(const id of ['a','b','c'])act(e,'join',id,t+1000);reconcile(e,e.rules.recruitmentDeadline,[]);
+  act(e,'raise_capacity','owner',t+3601000,{maxPeople:8});expect(e.rules.maxPeople).toBe(8);expect(e.rules.venueRequired).toBe(false);
+ });
+});
+
 it('交通多选与留言可更新清空，拒绝无效输入',()=>{const e=event();act(e,'join','a',t+1000,{transportPreferences:['public_transport','car'],registrationMessage:'大家好'});expect(e.participants[0]).toMatchObject({transportPreferences:['public_transport','car'],registrationMessage:'大家好'});act(e,'join','a',t+2000,{transportPreferences:[],registrationMessage:''});expect(e.participants[0]).toMatchObject({transportPreferences:[],registrationMessage:''});expect(()=>act(e,'join','a',t+3000,{transportPreferences:['plane']})).toThrow();expect(()=>act(e,'join','a',t+3000,{registrationMessage:'a'.repeat(501)})).toThrow();});
 
 it('只有发起人可以公开回复报名留言并通知成员',()=>{const e=event();act(e,'join','a',t+1000,{registrationMessage:'需要自带电脑吗？'});expect(()=>act(e,'reply_registration','b',t+2000,{participantId:'a',reply:'需要'})).toThrow('发布者');const out=act(e,'reply_registration','owner',t+3000,{participantId:'a',reply:'不用带，现场会准备。'});expect(e.participants[0]).toMatchObject({registrationReply:'不用带，现场会准备。',registrationRepliedAt:t+3000,registrationRepliedBy:'owner'});expect(out).toContainEqual(expect.objectContaining({userId:'a',subject:'发起人回复了你的报名留言'}));expect(()=>act(e,'reply_registration','owner',t+4000,{participantId:'missing',reply:'回复'})).toThrow('不存在');expect(()=>act(e,'reply_registration','owner',t+4000,{participantId:'a',reply:'a'.repeat(501)})).toThrow();});

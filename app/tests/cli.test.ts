@@ -21,6 +21,10 @@ describe('Agent CLI HTTP contract',()=>{
     expect(JSON.parse(r.fetch.mock.calls[0][1].body)).toEqual({action:'join',version:7,registrationMessage:'你好'});
     expect(r.stdout+r.stderr).not.toContain(token);
   });
+  it('原样提交 raise_capacity 的新人数上限',async()=>{
+    const r=await invoke(['events','action','abc','raise_capacity','--version','7','--key','capacity-12','--data','{"maxPeople":12}']);
+    expect(r.code).toBe(0);expect(JSON.parse(r.fetch.mock.calls[0][1].body)).toEqual({action:'raise_capacity',version:7,maxPeople:12});
+  });
   it('only exposes login session with explicit session-only flag',async()=>{
     const response=()=>new Response('{"user":{"id":"u"}}',{headers:{'Set-Cookie':`dc_session=${'b'.repeat(64)}; HttpOnly`}});
     const args=['auth','verify','--data','{"email":"fake@example.test","code":"123456","nickname":"测试"}'];

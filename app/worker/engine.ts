@@ -139,6 +139,26 @@ export function applyCommand(e:Activity,cmd:Command,userId:string,now:number,out
       e.receipts.push({at:now,kind:'description',conditions:conditions(e),reason:'介绍文字已更正，成团规则保持不变',descriptionChange:{before,after}});
       break;
     }
+    case 'raise_capacity': {
+      owner(e,userId);
+      if(e.status==='draft')fail('请先发布活动；草稿可直接编辑人数上限',409);
+      if(now>=e.rules.registrationDeadline)fail('报名已截止，不能扩充名额',409);
+      const maxPeople=cmd.maxPeople;
+      if(!Number.isInteger(maxPeople)||Number(maxPeople)>100)fail('人数上限须为不超过 100 的整数');
+      if(Number(maxPeople)<=e.rules.maxPeople)fail('新人数上限必须高于当前上限');
+      const waitlisted=e.participants.some(p=>p.status==='waitlisted');
+      if(waitlisted&&now>=e.rules.promotionDeadline)fail('候补递补已截止，不能扩充名额',409);
+      const approvedVenueCapacity=Math.max(0,...e.applications.filter(a=>a.kind==='venue'&&a.status==='approved').map(a=>a.capacity??0));
+      const venueRequired=e.rules.venueRequired||Number(maxPeople)>8;
+      if(['confirmed','repairing'].includes(e.status)&&venueRequired&&approvedVenueCapacity<Number(maxPeople))fail('已成行活动须先确认容量覆盖新上限的场地',409);
+      const before=e.rules.maxPeople;
+      e.rules.maxPeople=Number(maxPeople);
+      if(e.rules.maxPeople>8)e.rules.venueRequired=true;
+      promote(e,now,out);
+      e.receipts.push({at:now,kind:'capacity_expanded',conditions:conditions(e),reason:`人数上限从 ${before} 人提高到 ${e.rules.maxPeople} 人`,capacityChange:{before,after:e.rules.maxPeople}});
+      announce(e,out,noticeSemantics('capacity_expanded'),'活动名额已增加',`人数上限已从 ${before} 人提高到 ${e.rules.maxPeople} 人。`);
+      break;
+    }
     case 'publish': owner(e,userId);if(e.status!=='draft')fail('活动已经发布',409);e.rules=validateRules(e.rules,now);e.status='recruiting';e.publishedAt=now;record(e,now,'published','征集已发布，规则锁定');break;
     case 'select_time': {
       owner(e,userId);
