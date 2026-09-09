@@ -1,6 +1,6 @@
 import {describe,expect,it,vi} from 'vitest';
 // @ts-expect-error Release scripts are dependency-free JavaScript CLIs.
-import {ignoredAssetPaths,migrationDelta,normalizeBaseUrl,parseD1Rows,parseMigrationDiff,readEventPagination,repoFromRemote,summarizeOutbox,validateGitHubReleaseReady,validateHealth} from '../scripts/release-common.mjs';
+import {ignoredAssetPaths,migrationDelta,normalizeBaseUrl,parseD1Rows,parseMigrationDiff,readEventPagination,repoFromRemote,summarizeOutbox,validateGitHubReleaseReady,validateHealth,validateOperations} from '../scripts/release-common.mjs';
 
 describe('发布脚本安全门禁',()=>{
   it('识别未应用和远端多出的 migration',()=>{
@@ -59,5 +59,11 @@ describe('发布脚本安全门禁',()=>{
   it('拒绝第一页与 pagination 元数据不一致',async()=>{
     const fetch=vi.fn().mockResolvedValueOnce(new Response(JSON.stringify({events:[],pagination:{page:1,pageSize:1,total:2,totalPages:2,nextPage:2}})));
     await expect(readEventPagination('https://example.com',fetch)).rejects.toThrow('不一致');
+  });
+  it('运维读回只保留安全汇总，并拒绝数量与积压时间矛盾',()=>{
+    const projection={observedAt:1000,activities:{due:1,oldestDueAt:900,oldestAgeMs:100,private:'ignored'},mail:{due:0,oldestCreatedAt:null,oldestAgeMs:0,manualReviewFailures:2,terminalFailures:3,subject:'ignored'}};
+    expect(validateOperations(projection)).toEqual({observedAt:1000,activities:{due:1,oldestDueAt:900,oldestAgeMs:100},mail:{due:0,oldestCreatedAt:null,oldestAgeMs:0,manualReviewFailures:2,terminalFailures:3}});
+    expect(()=>validateOperations({...projection,mail:{...projection.mail,due:1}})).toThrow('不一致');
+    expect(()=>validateOperations({...projection,activities:{...projection.activities,due:-1}})).toThrow('格式');
   });
 });

@@ -169,6 +169,16 @@ export async function readEventPagination(baseUrl,fetchImpl=fetch){
   return {total:p.total,totalPages:p.totalPages,pageSize:p.pageSize,nextPage:p.nextPage};
 }
 
+export function validateOperations(data){
+  const integer=value=>Number.isSafeInteger(value)&&value>=0;
+  const section=(value,fields)=>value&&typeof value==='object'&&fields.every(field=>integer(value[field]));
+  if(!integer(data?.observedAt)||!section(data?.activities,['due','oldestAgeMs'])||!section(data?.mail,['due','oldestAgeMs','manualReviewFailures','terminalFailures']))throw new ReleaseError('operations 响应格式无效');
+  for(const [count,oldest,age] of [[data.activities.due,data.activities.oldestDueAt,data.activities.oldestAgeMs],[data.mail.due,data.mail.oldestCreatedAt,data.mail.oldestAgeMs]]){
+    if((count===0&&(oldest!==null||age!==0))||(count>0&&!integer(oldest)))throw new ReleaseError('operations 积压时间与数量不一致');
+  }
+  return {observedAt:data.observedAt,activities:{due:data.activities.due,oldestDueAt:data.activities.oldestDueAt,oldestAgeMs:data.activities.oldestAgeMs},mail:{due:data.mail.due,oldestCreatedAt:data.mail.oldestCreatedAt,oldestAgeMs:data.mail.oldestAgeMs,manualReviewFailures:data.mail.manualReviewFailures,terminalFailures:data.mail.terminalFailures}};
+}
+
 export function summarizeOutbox(rows){
   const summary={};
   for(const row of rows){
@@ -182,11 +192,12 @@ export async function collectReadback({baseUrl=DEFAULT_BASE_URL,expectedVersion=
   const normalized=normalizeBaseUrl(baseUrl);
   const health=validateHealth(await getJson(`${normalized}/api/health`,fetchImpl),expectedVersion,expectedEnvironment);
   const events=await readEventPagination(normalized,fetchImpl);
+  const operations=validateOperations(await getJson(`${normalized}/api/health/operations`,fetchImpl));
   const outbox=summarizeOutbox(remoteRows('SELECT status, COUNT(*) AS count FROM outbox GROUP BY status ORDER BY status'));
   const dueRows=remoteRows('SELECT COUNT(*) AS count FROM activities WHERE next_due <= unixepoch()*1000');
   const due=Number(dueRows[0]?.count);
   if(dueRows.length!==1||!Number.isSafeInteger(due)||due<0)throw new ReleaseError('到期活动汇总格式无效');
-  return {ok:true,baseUrl:normalized,health,events,d1:{outbox,dueActivities:due}};
+  return {ok:true,baseUrl:normalized,health,events,operations,d1:{outbox,dueActivities:due}};
 }
 
 export function parseReadbackArgs(args){
