@@ -12,11 +12,11 @@ export function createEventDetail({command,requireUser,state,renderEventForm,app
 function confirmation(title,message,action,extra={},reason=false){const f=el('form',{},el('h2',{},title),el('p',{},message));if(reason)f.append(field('原因（将记入活动记录）','reason','textarea'));const b=el('button',{type:'submit',class:'button dark'},'确认');f.append(b);f.onsubmit=async e=>{e.preventDefault();b.disabled=true;try{await command(action,{...extra,...(reason?{reason:f.elements.reason.value}:{})});}catch(err){errorAt(f,err);}finally{b.disabled=false;}};modal(f);}
 function raiseCapacityForm(e){
  const approvedVenueCapacity=Math.max(0,...(e.applications||[]).filter(a=>a.kind==='venue'&&a.status==='approved').map(a=>a.capacity||0));
- const confirmed=['confirmed','repairing'].includes(e.status),venueRequired=e.rules.venueRequired||e.rules.maxPeople>=8;
- const venueLimit=confirmed&&venueRequired?approvedVenueCapacity:100;
+ const confirmed=['confirmed','repairing'].includes(e.status);
+ const venueLimit=confirmed?(e.rules.venueRequired?approvedVenueCapacity:Math.max(8,approvedVenueCapacity)):100;
  const waitlistClosed=(e.counts?.waitlisted||0)>0&&Date.now()>=e.rules.promotionDeadline;
  const canSubmit=venueLimit>e.rules.maxPeople&&!waitlistClosed;
- const f=el('form',{},el('h2',{},'扩充名额'),el('p',{},`当前人数上限：${e.rules.maxPeople} 人`),field('新人数上限','maxPeople','number',Math.min(100,e.rules.maxPeople+1)),el('p',{class:'form-note'},`报名截止：${date(e.rules.registrationDeadline)}。只能输入大于当前上限且不超过 100 的整数。`),el('p',{class:'form-note'},e.rules.maxPeople>=8?'新上限超过 8 人，活动必须有容量覆盖新上限的场地。':'新上限超过 8 人时，系统会强制要求场地；成行前须确认容量覆盖新上限。'),confirmed&&venueRequired?el('p',{class:'form-note'},approvedVenueCapacity>0?`活动已成行，当前已确认场地容量为 ${approvedVenueCapacity} 人；新上限不能超过该容量。`:'活动已成行，须先确认场地容量，才能扩充到需要场地的规模。'):null,(e.counts?.waitlisted||0)>0?el('p',{class:'form-note'},`当前有 ${e.counts.waitlisted} 人候补；扩容将沿原顺序递补。递补截止：${date(e.rules.promotionDeadline)}。`):null);
+ const f=el('form',{},el('h2',{},'扩充名额'),el('p',{},`当前人数上限：${e.rules.maxPeople} 人`),field('新人数上限','maxPeople','number',Math.min(100,venueLimit,e.rules.maxPeople+1)),el('p',{class:'form-note'},`报名截止：${date(e.rules.registrationDeadline)}。只能输入大于当前上限且不超过 100 的整数。`),el('p',{class:'form-note'},e.rules.maxPeople>=8?'新上限超过 8 人，活动必须有容量覆盖新上限的场地。':'新上限超过 8 人时，系统会强制要求场地；成行前须确认容量覆盖新上限。'),confirmed?el('p',{class:'form-note'},approvedVenueCapacity>8?`当前已确认场地容量为 ${approvedVenueCapacity} 人，本次最多可扩至 ${venueLimit} 人。`:'如需扩至 9 人以上，请先确认可容纳新上限的场地。'):null,(e.counts?.waitlisted||0)>0?el('p',{class:'form-note'},`当前有 ${e.counts.waitlisted} 人候补；扩容将沿原顺序递补。递补截止：${date(e.rules.promotionDeadline)}。`):null);
  const input=f.elements.maxPeople;input.min=e.rules.maxPeople+1;input.max=Math.min(100,venueLimit);input.step=1;input.required=true;
  if(waitlistClosed)f.append(el('p',{class:'error-box',role:'alert'},'已有候补且递补截止已过，不能扩充名额。'));
  const submit=el('button',{class:'button dark',type:'submit',disabled:!canSubmit},canSubmit?'确认扩充':'当前条件下不能扩充');f.append(submit);

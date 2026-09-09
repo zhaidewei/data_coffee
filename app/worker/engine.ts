@@ -154,9 +154,9 @@ export function applyCommand(e:Activity,cmd:Command,userId:string,now:number,out
       const before=e.rules.maxPeople;
       e.rules.maxPeople=Number(maxPeople);
       if(e.rules.maxPeople>8)e.rules.venueRequired=true;
+      promote(e,now,out);
       e.receipts.push({at:now,kind:'capacity_expanded',conditions:conditions(e),reason:`人数上限从 ${before} 人提高到 ${e.rules.maxPeople} 人`,capacityChange:{before,after:e.rules.maxPeople}});
       announce(e,out,noticeSemantics('capacity_expanded'),'活动名额已增加',`人数上限已从 ${before} 人提高到 ${e.rules.maxPeople} 人。`);
-      promote(e,now,out);
       break;
     }
     case 'publish': owner(e,userId);if(e.status!=='draft')fail('活动已经发布',409);e.rules=validateRules(e.rules,now);e.status='recruiting';e.publishedAt=now;record(e,now,'published','征集已发布，规则锁定');break;
