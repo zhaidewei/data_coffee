@@ -3,10 +3,10 @@ import {fail} from './engine';
 const CONTENT_SECURITY_POLICY=[
   "default-src 'self'",
   "base-uri 'none'",
-  "connect-src 'self' https://api.pdok.nl",
+  "connect-src 'self'",
   "form-action 'self'",
   "frame-ancestors 'none'",
-  "img-src 'self' data: blob: https://tile.openstreetmap.org https://pub-80e888b848404fa086be09be4e975eb8.r2.dev",
+  "img-src 'self' data: blob: https://pub-80e888b848404fa086be09be4e975eb8.r2.dev",
   "object-src 'none'",
   "script-src 'self'",
   "style-src 'self' 'unsafe-inline'",

@@ -37,3 +37,5 @@ jobs:
       - run: npm run check
       - run: npm test
       - run: npm run build
+      - run: npx playwright install --with-deps chrome
+      - run: npm run test:css

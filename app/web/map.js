@@ -1,81 +1,117 @@
-// Local Leaflet runtime; geographic data and attribution are documented in data/README.md.
+// 荷兰轮廓来自本地 PDOK / Kadaster BRK 矢量数据；来源与处理方式见 data/README.md。
+import {canonicalCity,cityCoordinates} from './city-catalog.js';
 const root = new URL('.', import.meta.url);
-const fallback = {Amsterdam:[52.37344,4.90454],Rotterdam:[51.9225,4.47917],Utrecht:[52.09074,5.12142],'Den Haag':[52.0705,4.3007]};
-let leafletPromise;
+const SVG_NS = 'http://www.w3.org/2000/svg';
+const VIEWBOX = {width:640,height:500,padding:28};
 let active;
-const locations = new Map();
-const normal = value => String(value || '').normalize('NFKC').trim().toLocaleLowerCase('nl');
-export function exactCityLocation(city, docs) {
-  const aliases = new Set([normal(city)]);
-  if (aliases.has('den haag')) aliases.add("'s-gravenhage");
-  const matches = docs.filter(d => d.type === 'woonplaats' && aliases.has(normal(d.woonplaatsnaam)));
-  const unique = [...new Map(matches.map(d => [d.woonplaatscode || d.id,d])).values()];
-  if (unique.length !== 1) return null;
-  const point = /^POINT\(\s*([-\d.]+)\s+([-\d.]+)\s*\)$/.exec(unique[0].centroide_ll || '');
-  if (!point) return null;
-  const latlng = [Number(point[2]),Number(point[1])];
-  return latlng.every(Number.isFinite) && latlng[0]>=50 && latlng[0]<=54 && latlng[1]>=3 && latlng[1]<=8 ? latlng : null;
+
+function geometryPolygons(geometry) {
+  if (geometry?.type === 'Polygon') return [geometry.coordinates];
+  if (geometry?.type === 'MultiPolygon') return geometry.coordinates;
+  if (geometry?.type === 'GeometryCollection') return geometry.geometries.flatMap(geometryPolygons);
+  return [];
 }
-function loadLeaflet() {
-  if (!leafletPromise) leafletPromise = new Promise((resolve,reject) => {
-    const css = document.createElement('link');css.rel='stylesheet';css.href=new URL('vendor/leaflet/leaflet.css',root);document.head.append(css);
-    const script=document.createElement('script');script.src=new URL('vendor/leaflet/leaflet.js',root);
-    script.onload=()=>resolve(window.L);script.onerror=()=>{leafletPromise=null;script.remove();reject(new Error('地图组件加载失败'));};document.head.append(script);
+
+function geometryPoints(geometry) {
+  return geometryPolygons(geometry).flat(2).filter(point=>Array.isArray(point)&&point.length>=2&&point.slice(0,2).every(Number.isFinite));
+}
+
+export function outlineProjection(geometry) {
+  const points=geometryPoints(geometry);
+  if(!points.length)throw new Error('荷兰轮廓为空');
+  const lonCenter=points.reduce((sum,p)=>sum+p[0],0)/points.length;
+  const latCenter=points.reduce((sum,p)=>sum+p[1],0)/points.length;
+  const lonFactor=Math.cos(latCenter*Math.PI/180);
+  const xs=points.map(p=>(p[0]-lonCenter)*lonFactor),ys=points.map(p=>latCenter-p[1]);
+  const bounds={minX:Math.min(...xs),maxX:Math.max(...xs),minY:Math.min(...ys),maxY:Math.max(...ys)};
+  const scale=Math.min((VIEWBOX.width-2*VIEWBOX.padding)/(bounds.maxX-bounds.minX),(VIEWBOX.height-2*VIEWBOX.padding)/(bounds.maxY-bounds.minY));
+  const offsetX=(VIEWBOX.width-(bounds.maxX-bounds.minX)*scale)/2;
+  const offsetY=(VIEWBOX.height-(bounds.maxY-bounds.minY)*scale)/2;
+  return ([lat,lon])=>[offsetX+((lon-lonCenter)*lonFactor-bounds.minX)*scale,offsetY+(latCenter-lat-bounds.minY)*scale];
+}
+
+export function outlinePath(geometry,project=outlineProjection(geometry)) {
+  return geometryPolygons(geometry).flatMap(polygon=>polygon.map(ring=>ring.map(([lon,lat],index)=>{
+    const [x,y]=project([lat,lon]);return `${index?'L':'M'}${x.toFixed(2)} ${y.toFixed(2)}`;
+  }).join(' ')+' Z')).join(' ');
+}
+
+function svg(name,attributes={}) {
+  const node=document.createElementNS(SVG_NS,name);
+  for(const [key,value] of Object.entries(attributes))node.setAttribute(key,String(value));
+  return node;
+}
+
+function locate(city) {
+  const coords=cityCoordinates[canonicalCity(city)||city];
+  return coords ? {coords} : {error:`${city}：地图暂未收录位置，仍可使用下方城市按钮筛选。`};
+}
+
+export function layoutCityLabels(cities) {
+  const occupied=[];
+  return cities.map(city=>{
+    const width=Math.max(92,city.label.length*9+22),height=36;
+    const options=[[14,-height/2],[-width-14,-height/2],[14,-height-12],[-width-14,-height-12],[14,12],[-width-14,12]];
+    const position=options.find(([x,y])=>{
+      const box={x:city.x+x,y:city.y+y,width,height};
+      return box.x>=5&&box.y>=5&&box.x+width<=VIEWBOX.width-5&&box.y+height<=VIEWBOX.height-5&&!occupied.some(other=>box.x<other.x+other.width+4&&box.x+width+4>other.x&&box.y<other.y+other.height+4&&box.y+height+4>other.y);
+    });
+    if(!position)return {...city,box:null};
+    const [dx,dy]=position;
+    const box={x:city.x+dx,y:city.y+dy,width,height};occupied.push(box);
+    return {...city,box};
   });
-  return leafletPromise;
 }
-async function locate(city, signal) {
-  if(locations.has(city)) return locations.get(city);
-  const url=new URL('https://api.pdok.nl/bzk/locatieserver/search/v3_1/free');
-  url.search=new URLSearchParams({q:city,fq:'type:woonplaats',rows:'100'});
-  try {
-    const response=await fetch(url,{signal:AbortSignal.any([signal,AbortSignal.timeout(8000)])});
-    if(!response.ok) throw new Error('geocoder');
-    const data=await response.json();
-    const coords=exactCityLocation(city,data.response?.docs||[]);
-    // Ambiguous or unmatched names must never be placed by guessing.
-    if(coords)locations.set(city,{coords});
-    return coords ? {coords} : {error:`${city}：未找到唯一同名荷兰城市，请使用下方城市按钮。`};
-  } catch(error) {
-    if(signal.aborted)throw error;
-    if(fallback[city])return {coords:fallback[city],approximate:true};
-    return {error:`${city}：城市定位服务暂不可用，仍可使用下方城市按钮。`};
-  }
+
+function renderCityLabel(svgRoot,city,selectedCity,onSelect) {
+  const selected=selectedCity===city.city;
+  const group=svg('g',{class:'city-marker'+(selected?' is-selected':''),tabindex:'0',role:'button','aria-label':`选择 ${city.city}，${city.count} 场活动`,'aria-pressed':selected});
+  const edgeX=city.box.x>city.x?city.box.x:city.box.x+city.box.width;
+  const text=svg('text',{class:'city-marker-label',x:city.box.x+11,y:city.box.y+23});text.textContent=city.label;
+  group.append(svg('line',{class:'city-marker-line',x1:city.x,y1:city.y,x2:edgeX,y2:city.box.y+city.box.height/2}),svg('rect',{class:'city-marker-label-bg',x:city.box.x,y:city.box.y,width:city.box.width,height:city.box.height,rx:6}),text);
+  const choose=()=>onSelect(city.city);
+  group.addEventListener('click',choose);
+  group.addEventListener('keydown',event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();choose();}});
+  svgRoot.append(group);
 }
+
 export async function mountMap(container,events,selectedCity,onSelect) {
   active?.dispose();
-  const controller=new AbortController();let map;let observer;
-  const dispose=()=>{if(controller.signal.aborted)return;controller.abort();observer?.disconnect();map?.remove();map=undefined;};
+  const controller=new AbortController();let observer;
+  const dispose=()=>{if(controller.signal.aborted)return;controller.abort();observer?.disconnect();};
   active={dispose};
   container.replaceChildren();container.classList.add('real-map');
-  const canvas=document.createElement('div');canvas.className='real-map-canvas';canvas.setAttribute('aria-label','荷兰活动地图，可缩放、拖动和选择城市');
-  const status=document.createElement('p');status.className='real-map-status';status.setAttribute('role','status');status.textContent='正在加载荷兰地图…';
-  container.append(canvas,status);
-  const issues=new Set();const update=()=>{status.textContent=issues.size?[...issues].join(' '):'点击城市筛选活动 · 双指拖动或使用 ＋ / − 缩放';};
+  const canvas=svg('svg',{class:'real-map-canvas',viewBox:`0 0 ${VIEWBOX.width} ${VIEWBOX.height}`,preserveAspectRatio:'xMidYMid meet',role:'group','aria-label':'荷兰活动城市分布图'});
+  const status=document.createElement('p');status.className='real-map-status';status.setAttribute('role','status');status.textContent='正在加载荷兰城市地图…';
+  const attribution=document.createElement('p');attribution.className='real-map-attribution';attribution.append('轮廓：',Object.assign(document.createElement('a'),{href:'https://www.pdok.nl/',target:'_blank',rel:'noopener noreferrer',textContent:'PDOK / Kadaster'}),'（',Object.assign(document.createElement('a'),{href:'https://creativecommons.org/licenses/by/4.0/',target:'_blank',rel:'noopener noreferrer',textContent:'CC BY 4.0'}),'） + ',Object.assign(document.createElement('a'),{href:'https://www.naturalearthdata.com/',target:'_blank',rel:'noopener noreferrer',textContent:'Natural Earth'}),'（public domain）');
+  const footer=document.createElement('div');footer.className='real-map-footer';footer.append(status,attribution);
+  container.append(canvas,footer);
+  const issues=new Set();
+  const update=()=>{status.textContent=issues.size?[...issues].join(' '):'点击城市筛选活动 · 矢量地图可随屏幕清晰缩放';};
   const alive=()=>!controller.signal.aborted;
   observer=new MutationObserver(()=>{if(!container.isConnected)dispose();});observer.observe(document.body,{childList:true,subtree:true});
   try {
-    const L=await loadLeaflet();if(!alive())return dispose;
-    const netherlandsBounds=L.latLngBounds([[50.72,3.25],[53.58,7.25]]);
-    map=L.map(canvas,{preferCanvas:true,zoomSnap:.25,scrollWheelZoom:false,minZoom:6,maxZoom:17,zoomControl:true,maxBounds:netherlandsBounds.pad(.08),maxBoundsViscosity:1}).setView([52.2,5.35],7);
-    map.fitBounds(netherlandsBounds,{padding:[15,15]});
-    const zoomLabels=()=>canvas.classList.toggle('map-close-up',map.getZoom()>=10);map.on('zoomend',zoomLabels);zoomLabels();
-    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,noWrap:true,attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'}).on('tileerror',()=>{issues.add('底图暂不可用；已加载的省界和城市仍可操作。');update();}).addTo(map);
-    map.attributionControl.addAttribution('省界与地名：<a href="https://www.pdok.nl/">PDOK / Kadaster</a> · <a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a>');
-    const boundaries=fetch(new URL('data/nl-provinces.geojson',root),{signal:controller.signal}).then(r=>{if(!r.ok)throw new Error();return r.json();}).then(data=>{if(!alive())return;L.geoJSON(data,{interactive:false,style:{color:'#49716c',weight:1.4,fillColor:'#b6d3bb',fillOpacity:.09},onEachFeature:(feature,layer)=>{layer.bindTooltip(feature.properties.naam,{className:'province-label',direction:'center',permanent:true});}}).addTo(map);}).catch(()=>{if(alive()){issues.add('省界加载失败，可继续通过城市选择活动。');update();}});
-    const cities=[...new Set(events.map(e=>e.city).filter(Boolean))];
-    await Promise.all(cities.map(async city=>{
-      const place=await locate(city,controller.signal);if(!alive())return;
-      if(place.error){issues.add(place.error);update();return;}
-      if(place.approximate)issues.add('定位服务暂不可用，四个常用城市使用预设市中心位置。');
-      const count=events.filter(e=>e.city===city).reduce((sum,e)=>sum+(e.count??1),0);
-      const label=document.createElement('span');label.className='map-marker-label'+(city==='Den Haag'?' label-west':'');label.textContent=`${city} · ${count}`;
-      const marker=L.marker(place.coords,{keyboard:true,title:`${city}，${count} 场活动`,alt:`选择 ${city}`,icon:L.divIcon({className:'activity-city-marker'+(selectedCity===city?' is-selected':''),html:label,iconSize:[18,18],iconAnchor:[9,9]})}).addTo(map);
-      marker.on('click',()=>onSelect(city));
-      const element=marker.getElement();element?.setAttribute('role','button');element?.setAttribute('aria-pressed',String(selectedCity===city));
-      element?.addEventListener('keydown',event=>{if(event.key===' '){event.preventDefault();onSelect(city);}});
-    }));
-    await boundaries;if(alive()){update();map.invalidateSize({pan:false});map.fitBounds(netherlandsBounds,{padding:[22,22]});}
-  } catch(error) {if(alive()){issues.add('地图加载失败，请使用下方城市按钮筛选活动。');update();}}
+    const waterPromise=fetch(new URL('data/nl-water.geojson',root),{signal:controller.signal}).then(response=>{if(!response.ok)throw new Error('water');return response.json();}).catch(()=>null);
+    const response=await fetch(new URL('data/nl-outline.geojson',root),{signal:controller.signal});
+    if(!response.ok)throw new Error('outline');
+    const data=await response.json(),waterData=await waterPromise,geometry=data.features?.[0]?.geometry||data.geometry||data;
+    const project=outlineProjection(geometry);
+    canvas.append(svg('path',{class:'city-map-land',d:outlinePath(geometry,project),'fill-rule':'evenodd'}));
+    if(waterData){const waterGeometry=waterData.features?.[0]?.geometry||waterData.geometry||waterData;canvas.append(svg('path',{class:'city-map-water',d:outlinePath(waterGeometry,project),'fill-rule':'evenodd'}));}
+    else issues.add('水面图层暂不可用；城市位置和筛选仍可使用。');
+    const cityNames=[...new Set(events.map(event=>event.city).filter(Boolean))];
+    const placed=cityNames.map(city=>{
+      const place=locate(city);if(!alive())return null;
+      if(place.error){issues.add(place.error);return null;}
+      const count=events.filter(event=>event.city===city).reduce((sum,event)=>sum+(event.count??1),0);
+      const [x,y]=project(place.coords);return {city,count,x,y,label:`${city} · ${count}`};
+    }).filter(Boolean);
+    if(!alive())return dispose;
+    placed.forEach(city=>canvas.append(svg('circle',{class:'map-city-dot'+(selectedCity===city.city?' is-selected':''),cx:city.x,cy:city.y,r:7,'aria-hidden':'true'})));
+    layoutCityLabels(placed.sort((a,b)=>b.y-a.y)).filter(city=>city.box).forEach(city=>renderCityLabel(canvas,city,selectedCity,onSelect));
+    update();
+  } catch(error) {
+    if(alive()){issues.add('地图轮廓加载失败，请使用下方城市按钮筛选活动。');update();}
+  }
   return dispose;
 }
