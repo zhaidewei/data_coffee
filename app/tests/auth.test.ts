@@ -8,7 +8,7 @@ let mf: Miniflare; let env: Env;
 beforeAll(async () => {
   mf = new Miniflare(convertV4MiniflareOptions({ name: 'auth', modules: true, script: 'export default {fetch(){return new Response("test")}}', compatibilityDate: '2026-09-05', d1Databases: { DB: 'auth-test' } }));
   const DB = await mf.getD1Database('DB') as unknown as D1Database;
-  for (const file of ['0001_events.sql', '0002_identity.sql', '0006_mail_digest.sql']) {
+  for (const file of ['0001_events.sql', '0002_identity.sql','0006_mail_digest.sql','0008_outbox_notice_kind.sql',]) {
     const sql = (await readFile(new URL(`../migrations/${file}`, import.meta.url), 'utf8')).replace(/--[^\n]*/g, '');
     for (const statement of sql.split(';').map(s => s.trim()).filter(Boolean)) await DB.prepare(statement).run();
   }

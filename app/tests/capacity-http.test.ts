@@ -9,7 +9,7 @@ let mf:Miniflare,env:Env;
 beforeAll(async()=>{
  mf=new Miniflare(convertV4MiniflareOptions({modules:true,script:'export default {fetch(){return new Response("ok")}}',d1Databases:['DB'],compatibilityDate:'2026-09-05'}));
  const DB=await mf.getD1Database('DB');env={DB:DB as unknown as D1Database,APP_ENV:'test',ASSETS:{} as Fetcher};
- for(const f of ['0001_events.sql','0002_identity.sql','0004_tags.sql'])for(const sql of readFileSync(new URL(`../migrations/${f}`,import.meta.url),'utf8').split(';').filter(s=>s.trim()))await DB.prepare(sql).run();
+ for(const f of ['0001_events.sql','0002_identity.sql','0006_mail_digest.sql','0008_outbox_notice_kind.sql','0004_tags.sql'])for(const sql of readFileSync(new URL(`../migrations/${f}`,import.meta.url),'utf8').split(';').filter(s=>s.trim()))await DB.prepare(sql).run();
 });
 afterAll(async()=>{await mf?.dispose();});
 it('真实 HTTP 入口携版本同时报名：20 人全部得到结果且重放不重复',async()=>{

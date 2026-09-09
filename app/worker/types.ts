@@ -1,3 +1,4 @@
+import type {NoticeKind,NoticePriority} from './notices';
 export interface Env {
   DB: D1Database;
   ASSETS: Fetcher;
@@ -47,5 +48,5 @@ export interface Activity {
   receipts: Receipt[]; sequence: number; reason?: string;
   processed: {key: string; userId: string}[];
 }
-export interface Notice { userId: string; subject: string; text: string }
+export interface Notice { userId: string; kind: NoticeKind; priority: NoticePriority; deliverBefore: number | null; subject: string; text: string }
 export interface Command { action: string; [key: string]: unknown }

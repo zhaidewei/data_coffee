@@ -64,7 +64,7 @@ describe('相对截止与候补确认',()=>{
   const out=act(e,'leave','a',t+49*hour);
   expect(e.participants[3]).toMatchObject({status:'waitlisted',promotionOfferUntil:t+68*hour});
   expect(conditions(e).find(c=>c.key==='people')?.current).toBe(2);
-  expect(out.filter(n=>n.subject==='有候补名额，请确认参加')).toHaveLength(1);
+  expect(out.filter(n=>n.kind==='promotion_offer')).toEqual([expect.objectContaining({priority:0,deliverBefore:t+68*hour})]);
   const repeated:Notice[]=[];reconcile(e,t+49*hour+1,repeated);expect(repeated).toHaveLength(0);
   act(e,'join','newcomer',t+49*hour+2);expect(e.participants.at(-1)?.status).toBe('waitlisted');
   act(e,'join','d',t+49*hour+3);

@@ -9,7 +9,7 @@ const raw='a'.repeat(64);
 beforeAll(async()=>{
  mf=new Miniflare(convertV4MiniflareOptions({name:'tokens',modules:true,script:'export default {fetch(){return new Response("ok")}}',compatibilityDate:'2026-09-05',d1Databases:{DB:'tokens'}}));
  const DB=await mf.getD1Database('DB') as unknown as D1Database;
- for(const file of ['0001_events.sql','0002_identity.sql','0003_personal_tokens.sql'])for(const sql of (await readFile(new URL(`../migrations/${file}`,import.meta.url),'utf8')).replace(/--[^\n]*/g,'').split(';').map(s=>s.trim()).filter(Boolean))await DB.prepare(sql).run();
+ for(const file of ['0001_events.sql','0002_identity.sql','0006_mail_digest.sql','0008_outbox_notice_kind.sql','0003_personal_tokens.sql'])for(const sql of (await readFile(new URL(`../migrations/${file}`,import.meta.url),'utf8')).replace(/--[^\n]*/g,'').split(';').map(s=>s.trim()).filter(Boolean))await DB.prepare(sql).run();
  env={DB,ASSETS:{} as Fetcher,APP_ENV:'development'};
  await DB.prepare("INSERT INTO users(id,email,nickname) VALUES ('u','u@example.com','成员'),('other','other@example.com','他人')").run();
  await DB.prepare('INSERT INTO auth_sessions VALUES (?,?,?)').bind(await hash(raw),'u',Date.now()+86400000).run();
