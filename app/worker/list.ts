@@ -1,6 +1,7 @@
 import type {Activity,Env,User} from './types';
 import {fail,nextDue} from './engine';
 import {advance,project} from './store';
+import {decodeActivityDocument} from './activity-schema';
 // @ts-expect-error Shared browser calendar logic keeps Amsterdam/DST filtering identical.
 import {matchesTime} from '../web/overview.js';
 
@@ -15,10 +16,10 @@ function rangeOf(params:URLSearchParams){
 export async function listEvents(env:Env,user:User|null,params:URLSearchParams,clock=Date.now){
   const requestedPage=positive(params.get('page'),1),pageSize=Math.min(20,positive(params.get('pageSize'),12));
   const range=rangeOf(params),city=params.get('city')||'',tag=(params.get('tag')||'').toLowerCase();
-  const rows=await env.DB.prepare("SELECT document FROM activities WHERE json_extract(document,'$.status')!='draft' OR json_extract(document,'$.ownerId')=? ORDER BY created_at DESC,id DESC").bind(user?.id??null).all<{document:string}>();
+  const rows=await env.DB.prepare("SELECT id,version,document,created_at FROM activities WHERE json_extract(document,'$.status')!='draft' OR json_extract(document,'$.ownerId')=? ORDER BY created_at DESC,id DESC").bind(user?.id??null).all<{id:string;version:number;document:string;created_at:number}>();
   const visible:Activity[]=[];
   for(const row of rows.results){
-    let e:Activity=JSON.parse(row.document);const due=nextDue(e);
+    let e:Activity=decodeActivityDocument(row.document,{id:row.id,version:row.version,createdAt:row.created_at});const due=nextDue(e);
     if((due!==null&&due<=clock())||e.repairs.some(r=>['talks','cohosts','roles'].includes(r.key)))e=await advance(env,e.id,clock);
     if(e.status!=='draft'||e.ownerId===user?.id)visible.push(e);
   }
