@@ -12,7 +12,7 @@ describe('发布脚本安全门禁',()=>{
     const pulls=[{number:9,base:{ref:'main'},merged_at:'2026-09-09T00:00:00Z',merge_commit_sha:head}];
     const workflow={id:42,path:'.github/workflows/ci.yml'};
     const runs={workflow_runs:[{id:81,workflow_id:42,head_sha:head,status:'completed',conclusion:'success'}]};
-    const jobs={workflowRunId:81,jobs:[{name:'App Worker',head_sha:head,status:'completed',conclusion:'success'}]};
+    const jobs={workflowRunId:81,jobs:[{id:2,name:'App Worker',status:'completed',conclusion:'success'}]};
     expect(validateGitHubReleaseReady(protection,checks,pulls,head,workflow,runs,jobs)).toEqual({adminsEnforced:true,pullRequestReviewsRequired:true,requiredCheck:'App Worker',workflow:{id:42,path:'.github/workflows/ci.yml',runId:81},pullRequest:9,check:{name:'App Worker',status:'completed',conclusion:'success',appId:7}});
     expect(()=>validateGitHubReleaseReady({...protection,enforce_admins:{enabled:false}},checks,pulls,head,workflow,runs,jobs)).toThrow('管理员');
     expect(()=>validateGitHubReleaseReady({...protection,required_pull_request_reviews:{...protection.required_pull_request_reviews,bypass_pull_request_allowances:{users:[{}]}}},checks,pulls,head,workflow,runs,jobs)).toThrow('bypass');
@@ -22,6 +22,8 @@ describe('发布脚本安全门禁',()=>{
     expect(()=>validateGitHubReleaseReady(protection,checks,pulls,head,{...workflow,path:'.github/workflows/other.yml'},runs,jobs)).toThrow('路径');
     expect(()=>validateGitHubReleaseReady(protection,checks,pulls,head,workflow,{workflow_runs:[{...runs.workflow_runs[0],workflow_id:99}]},jobs)).toThrow('workflow run');
     expect(()=>validateGitHubReleaseReady(protection,checks,pulls,head,workflow,runs,{workflowRunId:82,jobs:jobs.jobs})).toThrow('不属于');
+    expect(()=>validateGitHubReleaseReady(protection,checks,pulls,head,workflow,runs,{workflowRunId:81,jobs:[{...jobs.jobs[0],id:1}]})).toThrow('同一次检查');
+    expect(()=>validateGitHubReleaseReady(protection,checks,pulls,head,workflow,{workflow_runs:[runs.workflow_runs[0],{...runs.workflow_runs[0],id:82,conclusion:'failure'}]},{workflowRunId:82,jobs:jobs.jobs})).toThrow('最新发布 workflow run');
   });
   it('枚举静态资源目录中的 ignored 文件',()=>{
     expect(ignoredAssetPaths('app/web/.DS_Store\napp/web/private.txt\n')).toEqual(['app/web/.DS_Store','app/web/private.txt']);

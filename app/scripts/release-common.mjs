@@ -76,11 +76,14 @@ export function validateGitHubReleaseReady(protection,checks,pulls,head,workflow
   if(!latest)throw new ReleaseError(`GitHub 上找不到 ${head} 的 App Worker check`);
   if(latest.status!=='completed'||latest.conclusion!=='success')throw new ReleaseError(`App Worker check 尚未成功（status=${latest.status}, conclusion=${latest.conclusion}）`);
   if(workflow?.path!==RELEASE_WORKFLOW_PATH)throw new ReleaseError(`发布 workflow 路径不是 ${RELEASE_WORKFLOW_PATH}`);
-  const workflowRun=Array.isArray(runs?.workflow_runs)?runs.workflow_runs.find(run=>run?.workflow_id===workflow.id&&run?.head_sha===head&&run?.status==='completed'&&run?.conclusion==='success'):null;
-  if(!workflowRun)throw new ReleaseError(`${RELEASE_WORKFLOW_PATH} 在 ${head} 上没有成功的 workflow run`);
+  const workflowRun=Array.isArray(runs?.workflow_runs)?runs.workflow_runs.filter(run=>run?.workflow_id===workflow.id&&run?.head_sha===head).sort((a,b)=>Number(b.id)-Number(a.id))[0]:null;
+  if(!workflowRun)throw new ReleaseError(`${RELEASE_WORKFLOW_PATH} 在 ${head} 上没有 workflow run`);
+  if(workflowRun.status!=='completed'||workflowRun.conclusion!=='success')throw new ReleaseError(`最新发布 workflow run 尚未成功（status=${workflowRun.status}, conclusion=${workflowRun.conclusion}）`);
   if(jobs?.workflowRunId!==workflowRun.id)throw new ReleaseError('App Worker jobs 不属于已验证的发布 workflow run');
-  const workflowJob=Array.isArray(jobs?.jobs)?jobs.jobs.find(job=>job?.name==='App Worker'&&job?.head_sha===head&&job?.status==='completed'&&job?.conclusion==='success'):null;
+  const workflowJob=Array.isArray(jobs?.jobs)?jobs.jobs.filter(job=>job?.name==='App Worker').sort((a,b)=>Number(b.id)-Number(a.id))[0]:null;
   if(!workflowJob)throw new ReleaseError('已验证的发布 workflow run 中没有成功的 App Worker job');
+  if(workflowJob.status!=='completed'||workflowJob.conclusion!=='success')throw new ReleaseError(`发布 workflow 的 App Worker job 尚未成功（status=${workflowJob.status}, conclusion=${workflowJob.conclusion}）`);
+  if(workflowJob.id!==latest.id)throw new ReleaseError('required App Worker check 与发布 workflow job 不是同一次检查');
   const pullRequest=Array.isArray(pulls)?pulls.find(pr=>pr?.base?.ref==='main'&&typeof pr.merged_at==='string'&&pr.merge_commit_sha===head):null;
   if(!pullRequest)throw new ReleaseError(`GitHub 上找不到生成 ${head} 的已合并 main pull request`);
   return {adminsEnforced:true,pullRequestReviewsRequired:true,requiredCheck:'App Worker',workflow:{id:workflow.id,path:workflow.path,runId:workflowRun.id},pullRequest:Number(pullRequest.number),check:{name:latest.name,status:latest.status,conclusion:latest.conclusion,appId:latest.app?.id??null}};
@@ -99,10 +102,10 @@ export function assertGitHubReleaseReady(head){
   const pulls=parseJson(capture('gh',['api',`repos/${repo}/commits/${head}/pulls`],{cwd:REPO_DIR,label:'读取 GitHub commit pull requests'}),'GitHub pulls API');
   const workflow=parseJson(capture('gh',['api',`repos/${repo}/actions/workflows/ci.yml`],{cwd:REPO_DIR,label:'读取发布 workflow'}),'GitHub workflow API');
   const runs=parseJson(capture('gh',['api',`repos/${repo}/actions/workflows/ci.yml/runs?head_sha=${head}&per_page=20`],{cwd:REPO_DIR,label:'读取发布 workflow runs'}),'GitHub workflow runs API');
-  const successfulRun=Array.isArray(runs?.workflow_runs)?runs.workflow_runs.find(run=>run?.workflow_id===workflow.id&&run?.head_sha===head&&run?.status==='completed'&&run?.conclusion==='success'):null;
-  if(!successfulRun)throw new ReleaseError(`${RELEASE_WORKFLOW_PATH} 在 ${head} 上没有成功的 workflow run`);
-  const jobs=parseJson(capture('gh',['api',`repos/${repo}/actions/runs/${successfulRun.id}/jobs`],{cwd:REPO_DIR,label:'读取发布 workflow jobs'}),'GitHub workflow jobs API');
-  return {repo,...validateGitHubReleaseReady(protection,checks,pulls,head,workflow,runs,{workflowRunId:successfulRun.id,...jobs})};
+  const latestRun=Array.isArray(runs?.workflow_runs)?runs.workflow_runs.filter(run=>run?.workflow_id===workflow.id&&run?.head_sha===head).sort((a,b)=>Number(b.id)-Number(a.id))[0]:null;
+  if(!latestRun)throw new ReleaseError(`${RELEASE_WORKFLOW_PATH} 在 ${head} 上没有 workflow run`);
+  const jobs=parseJson(capture('gh',['api',`repos/${repo}/actions/runs/${latestRun.id}/jobs`],{cwd:REPO_DIR,label:'读取发布 workflow jobs'}),'GitHub workflow jobs API');
+  return {repo,...validateGitHubReleaseReady(protection,checks,pulls,head,workflow,runs,{workflowRunId:latestRun.id,...jobs})};
 }
 
 export function parseD1Rows(output){
