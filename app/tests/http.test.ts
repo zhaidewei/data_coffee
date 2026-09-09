@@ -2,6 +2,10 @@ import {describe,it,expect} from 'vitest';
 import worker,{body} from '../worker/index';
 import type {Env} from '../worker/types';
 describe('HTTP边界',()=>{
+ it('health 暴露可核对的部署版本',async()=>{
+   const r=await worker.fetch(new Request('https://test.invalid/api/health'),{APP_ENV:'test',APP_VERSION:'a'.repeat(40)} as Env);
+   expect(await r.json()).toEqual({ok:true,environment:'test',version:'a'.repeat(40)});
+ });
  it('分块请求也限制字节数',async()=>{
    const stream=new ReadableStream({start(c){c.enqueue(new Uint8Array(20000));c.enqueue(new Uint8Array(20000));c.close();}});
    const request=new Request('https://test.invalid/api/events',{method:'POST',headers:{'Content-Type':'application/json'},body:stream,duplex:'half'} as RequestInit);

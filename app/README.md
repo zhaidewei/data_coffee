@@ -19,6 +19,18 @@ npm run dev
 
 验证：`npm run check`、`npm test`、`npm run build`。build 只是 Workers dry-run，不部署。依赖版本及 lockfile 固定；Miniflare 当前测试运行器为 5.20260903.0-alpha，未用于线上运行。
 
+## 发布与读回
+
+`npm run release:preflight` 要求工作树干净、当前位于 `main`、HEAD 与刷新后的 `origin/main` 完全一致。`origin` 和 `gh repo view` 都必须解析为 canonical `zhaidewei/data_coffee`；GitHub protection 必须对管理员生效、要求 PR review、没有 review bypass，并把 `App Worker` 配为 required check。当前 SHA 还必须来自一个已合并到 `main` 的 PR，且 required GitHub App 对应的最新 check 已成功。随后脚本直接读取远端 D1 migration 记录；有待应用 migration 或远端出现当前代码没有的 migration 时停止。它不应用 migration。
+
+首次启用时，先把 CI workflow 合并到远端，让 GitHub 至少运行一次 `App Worker`，再在 branch protection 中把该 check 设为 required；完成前 preflight 会按设计拒绝发布。发布机需安装并登录 `gh` 与 Wrangler CLI，两者仅使用各自现有凭据，脚本不读取或打印凭据。
+
+`npm run deploy:dev` 依次执行 preflight、`npm ci`、类型检查、测试和 dry-run build，再次核对 Git 与 D1 后才调用 Wrangler。部署把完整 Git SHA 写入 `APP_VERSION` 和 Worker 版本说明。`/api/health` 返回该版本；配置里的 `APP_VERSION=local` 仅作为绕过发布脚本时的明显占位值。
+
+部署后脚本只读回 canonical production URL，并要求 health 环境为 `production`；`DATA_COFFEE_BASE_URL` 不影响部署。它核对 `/api/health`、读取 `/api/events?page=1&pageSize=1` 验证 pagination 元数据，并通过只读 D1 查询输出 outbox 状态计数及已到期活动数量。活动列表 API 会按现有业务规则先结算到期活动，因此这一步可能推进活动状态和生成通知；单页读取可避免为读回反复扫描。脚本输出不包含活动正文、用户、邮箱、邮件内容或密钥。也可单独执行 `npm run release:readback -- --expected-version <40位Git SHA>`；只有这个独立 readback 接受 `DATA_COFFEE_BASE_URL` 或 `--base-url` 指定另一个不含凭据的 HTTPS 地址。
+
+CI 会比较当前提交与 PR base（push 到 `main` 时使用 push 前 SHA）：`app/migrations/` 只允许新增文件，修改、删除或重命名已经存在的 migration 都会失败。首次 push 没有有效 base SHA 时跳过该项。
+
 ## CLI 与 Agent 调用
 
 读者：通过终端或 Agent 操作活动的维护者与用户。CLI 使用网页相同的 HTTP API、用户身份及权限检查，优先使用个人访问令牌。Node.js 22+ 即可，无新增运行依赖；在本目录运行 `npm run cli -- --help`，脚本集成建议直接使用 `node cli/dc-flow.mjs`，避免 npm 输出干扰 JSON。
