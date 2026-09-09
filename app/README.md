@@ -1,6 +1,6 @@
 # Data Coffee Web MVP
 
-读者：接手开发、部署和验收的维护者。这里是独立的 Cloudflare Workers + D1 应用，旧项目入口保留。
+读者：接手开发、部署和验收的维护者。这里是当前 Cloudflare Workers + D1 应用。旧 Vercel MCP 代码入口已退休，旧数据库不在本应用迁移范围内。
 
 ## 本地启动
 
@@ -36,11 +36,11 @@ node cli/dc-flow.mjs events action EVENT_ID publish --version 0 --key publish-un
 
 邮箱登录保留作为备用：`auth request --data ...` 的 JSON 为 `{email}`，该命令会向目标服务请求真实验证码；`auth verify --data -` 接收 `{email,code,nickname}`。普通验证输出只含用户；显式 `--session-only` 输出 `{sessionToken}` 供管道捕获。会话仅经 `DATA_COFFEE_SESSION` 或 `--session-stdin` 注入；后者接收原始 token 或该 JSON。使用本地 `secret` CLI 在调用点读取并通过管道注入，不把会话、验证码写进命令参数、文档或文件。认证请求体优先 stdin，不能同时让会话和请求体占用 stdin。CLI 不保存会话。`auth me` 查询本人；`auth logout` 注销当前会话。
 
-成功输出为 stdout JSON；错误为 stderr JSON。退出码：0 成功，1 网络或 API 错误，2 参数错误，3 认证/权限错误，4 版本冲突。请求超时 30 秒，拒绝 HTTP 重定向。活动列表遵循服务端当前最多 200 条及草稿可见性规则；当前没有分页、删除已发布活动、自动登录刷新。测试通过 mock HTTP 验证参数和错误通道，不发送真实邮件。
+成功输出为 stdout JSON；错误为 stderr JSON。退出码：0 成功，1 网络或 API 错误，2 参数错误，3 认证/权限错误，4 版本冲突。请求超时 30 秒，拒绝 HTTP 重定向。活动列表遵循服务端分页及草稿可见性规则；当前不支持删除已发布活动和自动登录刷新。测试通过 mock HTTP 验证参数和错误通道，不发送真实邮件。
 
 ## 云端开发环境准备
 
-当前测试环境为 https://data-coffee-dev.dewei-zhai.workers.dev ，`wrangler.jsonc` 已绑定对应的独立 D1 数据库。迁移 0001–0003 已应用。另建环境时需创建自己的数据库并替换绑定及 `APP_URL`，再执行迁移和部署。
+当前测试环境为 https://data-coffee-dev.dewei-zhai.workers.dev ，`wrangler.jsonc` 已绑定对应的独立 D1 数据库。迁移 0001–0006 已应用。另建环境时需创建自己的数据库并替换绑定及 `APP_URL`，再执行迁移和部署。
 
 发信配置：`EMAIL_FROM` 使用已在 Brevo 验证的发件人；当前测试环境使用配置中的 Gmail 发件地址，`EMAIL_FROM_NAME` 可为 Data Coffee。`BREVO_API_KEY` 和 `DEEPSEEK_API_KEY` 使用 Worker secrets；通过本地 secret CLI 在使用点读取后直接管道注入，不写入仓库、.dev.vars 或文档。`DEEPSEEK_MODEL` 可覆盖默认模型。
 
