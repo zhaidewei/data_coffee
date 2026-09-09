@@ -24,7 +24,7 @@ export default {
       if(request.headers.has('Authorization')) await currentUser(request,env);
       const auth=await handleTokens(request,env) ?? await handleAuth(request,env);
       if(auth)res=auth;
-      else if(url.pathname==='/api/health')res=json({ok:true,environment:env.APP_ENV});
+      else if(url.pathname==='/api/health')res=json({ok:true,environment:env.APP_ENV,version:env.APP_VERSION??'unknown'});
       else {
         const user=await currentUser(request,env);
         const context={...env,APP_URL:env.APP_URL||url.origin};

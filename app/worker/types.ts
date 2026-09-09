@@ -3,6 +3,7 @@ export interface Env {
   ASSETS: Fetcher;
   APP_ENV: string;
   APP_URL?: string;
+  APP_VERSION?: string;
   BREVO_API_KEY?: string;
   EMAIL_FROM?: string;
   EMAIL_FROM_NAME?: string;
