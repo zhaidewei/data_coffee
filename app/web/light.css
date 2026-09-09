@@ -11,8 +11,8 @@
 [data-theme=light] .overview .filter{color:#526780}[data-theme=light] .overview .filter:hover{background:#edf3fb}[data-theme=light] .overview .filter.active{background:#e1edff;border-color:#9ebde6;color:#245a9c}
 [data-theme=light] .overview-city{background:#f7f9fc;border-color:#d5dfeb;color:#425d7b}[data-theme=light] .overview-city.active{background:#e3efff;border-color:#81aade;color:#214f88}[data-theme=light] .city-count{background:#dee8f5;color:#31577f}
 [data-theme=light] .overview-event:hover{background:#f9fbff;border-color:#7fa6d6}
-[data-theme=light] .overview-event-meta,[data-theme=light] .overview-event-bottom span:last-child{color:#2766aa}
-[data-theme=light] .overview-slot-list,[data-theme=light] .overview-description,[data-theme=light] .overview-event-bottom{color:#5e7087}
+[data-theme=light] .overview-description{color:#5e7087}
+[data-theme=light] .overview-heading-meta .event-tags span{background:#eaf2ff;border-color:#bed3ef;color:#245c9c}
 [data-theme=light] .badge{background:#dfebfc;color:#315782}[data-theme=light] .badge.confirmed,[data-theme=light] .badge.completed{background:#d7f3e3;color:#14643d}[data-theme=light] .badge.cancelled{background:#ffe1e6;color:#a3213b}[data-theme=light] .badge.repairing{background:#ffedcf;color:#855106}
 [data-theme=light] .real-map{border-color:#ced9e4}[data-theme=light] .real-map-status{background:#edf3f9;color:#52687d}
 [data-theme=light] .dag-graph{background-color:#f4f7fb;background-image:radial-gradient(#c7d5e6 1px,transparent 1px)}[data-theme=light] .dag-toolbar{color:#567292}

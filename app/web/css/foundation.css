@@ -69,7 +69,7 @@ footer a:hover { text-decoration: underline; }
 .popularity-track { position: relative; }
 .event-popularity progress::-webkit-progress-value { background: var(--heat); }
 .event-popularity progress::-moz-progress-bar { background: var(--heat); }
-.capacity-marker { position: absolute; top: -3px; height: 12px; width: 2px; background: var(--muted); }
+.quorum-marker { position: absolute; top: -3px; height: 12px; width: 2px; background: var(--ink); transform: translateX(-1px); opacity: .8; }
 .event-popularity small { display: block; margin-top: 6px; font-size: 10px; }
 
 @media (max-width:600px) {

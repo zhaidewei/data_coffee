@@ -1,6 +1,6 @@
 import {describe,it,expect} from 'vitest';
 // @ts-ignore shared browser model
-import {localParts,amsterdamMs,weekendCoffeeTemplate,popularity} from '../web/event-models.js';
+import {localParts,amsterdamMs,weekendCoffeeTemplate,popularity,participationSummary,overviewAction,overviewTiming} from '../web/event-models.js';
 // @ts-ignore browser city catalog
 import {cityGroups} from '../web/city-picker.js';
 import {validateRules} from '../worker/engine';
@@ -9,6 +9,29 @@ describe('人气按报名和候补计算',()=>{
  it.each([[0,0,'quiet'],[3,0,'quiet'],[4,0,'steady'],[7,0,'steady'],[8,0,'warm'],[8,3,'warm'],[8,4,'hot']])('人数 %s + %s 的热度是 %s',(j,w,heat)=>expect(read(+j,+w).heat).toBe(heat));
  it('候补超过容量仍完整显示，图形容纳超过200%的数值',()=>{const p=read(8,17);expect(p.people).toBe(25);expect(p.percent).toBe(313);expect(p.scale).toBeGreaterThanOrEqual(p.percent);expect(p.text).toContain('17 人候补');});
  it('旧投影没有counts时按0显示',()=>expect(popularity({rules:{maxPeople:8}}).people).toBe(0));
+});
+describe('活动卡片把决定参与的信息压缩成一份',()=>{
+ it('最终时间未定时不从总报名数推断成行差额',()=>{
+  expect(participationSummary({counts:{joined:2,waitlisted:0},rules:{minPeople:4,maxPeople:8,timeSlots:[{}]}})).toMatchObject({headline:'2 人已报名 · 最终时段需 4 人可参加',needed:null,limit:'最多 8 人'});
+  expect(participationSummary({selectedSlotId:'final',counts:{joined:2,waitlisted:0},rules:{minPeople:4,maxPeople:8,timeSlots:[{}]}}).headline).toBe('2 人已报名 · 还差 2 人成行');
+  expect(participationSummary({counts:{joined:8,waitlisted:3},rules:{minPeople:4,maxPeople:8}}).headline).toBe('8 人已报名 · 3 人候补');
+ });
+ it('下一步只在确实仍可报名时发出报名邀请',()=>{
+  const rules={startsAt:5000,registrationDeadline:3000,promotionDeadline:4000,minPeople:4,maxPeople:8,waitlist:true};
+  expect(overviewAction({status:'recruiting',counts:{joined:2},rules},2000)).toBe('查看并报名');
+  expect(overviewAction({status:'recruiting',counts:{joined:8},rules},4500)).toBe('查看活动');
+  expect(overviewAction({status:'completed',counts:{joined:8},rules},2000)).toBe('查看结果');
+  expect(overviewAction({status:'cancelled',counts:{joined:2},rules},2000)).toBe('查看活动');
+  expect(overviewAction({status:'draft',counts:{joined:0},rules},2000)).toBe('查看草稿');
+ });
+ it('同一节奏的候选日期合并显示，跨节奏时不制造共同时间',()=>{
+  const slot=(day:number,hour=13)=>({startsAt:amsterdamMs(`2026-09-${day}T${hour}:00`),endsAt:amsterdamMs(`2026-09-${day}T${hour+2}:30`)});
+ expect(overviewTiming([slot(13),slot(20),slot(27)])).toEqual({dates:'9月13、20、27日',rhythm:'周日 · 13:00–15:30'});
+  expect(overviewTiming([slot(13),slot(20),slot(27)],true)).toEqual({dates:'时间待定',rhythm:'候选：9月13、20、27日 · 最终选 1 场 · 周日 · 13:00–15:30'});
+  expect(overviewTiming([slot(13),slot(20,14)])).toEqual({dates:'9月13、20日',rhythm:'2 个候选时段'});
+  expect(overviewTiming([slot(13),slot(20,14)],true)).toEqual({dates:'时间待定',rhythm:'候选：9月13、20日 · 最终选 1 场'});
+  expect(overviewTiming([{startsAt:amsterdamMs('2026-12-27T13:00'),endsAt:amsterdamMs('2026-12-27T15:30')},{startsAt:amsterdamMs('2027-01-03T13:00'),endsAt:amsterdamMs('2027-01-03T15:30')}]).dates).toBe('2026年12月27日、2027年1月3日');
+ });
 });
 describe('周末模板的荷兰当地日期和业务有效性',()=>{
  it.each(['2026-09-08T19:00:00Z','2026-10-13T10:00:00Z','2026-03-17T10:00:00Z','2026-12-24T10:00:00Z','2026-09-11T11:01:00Z'])('跨周、跨年或夏令时 %s',iso=>{

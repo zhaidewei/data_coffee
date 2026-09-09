@@ -1,7 +1,6 @@
 import {$,el,badge,btn} from './dom.js';
 import {monthRange,eventSlots} from '../shared/time-rules.js';
-import {localParts} from '../event-models.js';
-import {cityCoffee,defaultCoffee} from '../city-coffee.js';
+import {overviewAction,overviewTiming} from '../event-models.js';
 import {eventPopularity,eventTags} from './event-widgets.js';
 import {mountMap} from '../map.js';
 
@@ -17,19 +16,8 @@ function dismissOverviewIntro(){
 }
 function hero(){return el('section',{class:'hero'},el('div',{},el('span',{class:'eyebrow'},'GOOD COFFEE. REAL CONNECTIONS.'),el('h1',{},'数据之外，',el('br'),'还有一杯 ',el('em',{},'Coffee.')),el('p',{},'把屏幕里的同行，变成咖啡桌旁的朋友。\n在荷兰，和做数据、做 AI 的人聊一个真实问题。'),el('div',{class:'hero-actions'},el('a',{href:'#gatherings',class:'button dark',onclick:e=>{e.preventDefault();$('#gatherings')?.scrollIntoView({behavior:'smooth'});}},'找到下一场聚会 ↗'),el('span',{class:'muted'},'小规模 · 有话聊 · 一起办'))),el('div',{class:'hero-art','aria-label':'Data Coffee 咖啡杯插画',role:'img'},el('span',{class:'steam','aria-hidden':'true'},'∿ ∿'),el('span',{class:'orbit','aria-hidden':'true'},'✳'),el('div',{class:'cup','aria-hidden':'true'},'dc.'),el('span',{class:'art-note'},'BREW IDEAS, TOGETHER.')));}
 function overviewRange(){return state.period==='all'?null:state.period==='custom'?{from:state.from,to:state.to}:monthRange(state.period);}
-function overviewCalendar(slots){
- const dates=[...new Set(slots.map(s=>localParts(s.startsAt).slice(0,10)))].sort();
- const months=[...new Set(dates.map(d=>d.slice(0,7)))];
- return el('div',{class:'overview-calendars'},months.map(month=>{
- const [year,m]=month.split('-').map(Number),offset=(new Date(Date.UTC(year,m-1,1)).getUTCDay()+6)%7,days=new Date(Date.UTC(year,m,0)).getUTCDate();
- const grid=el('div',{class:'mini-calendar-grid','aria-hidden':'true'},['一','二','三','四','五','六','日'].map(d=>el('span',{class:'mini-weekday'},d)));
- for(let i=0;i<offset;i++)grid.append(el('span'));
- for(let day=1;day<=days;day++){const key=month+'-'+String(day).padStart(2,'0');grid.append(el('span',{class:dates.includes(key)?'mini-day available':'mini-day'},day));}
- return el('div',{class:'mini-calendar',role:'img','aria-label':year+'年'+m+'月，活动日期：'+dates.filter(d=>d.startsWith(month)).map(d=>Number(d.slice(-2))+'日').join('、')},el('strong',{},year+' / '+String(m).padStart(2,'0')),grid);
- }));
-}
-function overviewCardVisual(e,slots){const calendar=overviewCalendar(slots),root=el('div',{class:'overview-card-visual'},calendar);if(calendar.children.length<2){const image=el('img',{class:'city-coffee',crossorigin:'anonymous',src:cityCoffee(e.city)+'?cors=1',alt:'',loading:'lazy'});image.onerror=()=>{if(image.getAttribute('src')!==defaultCoffee)image.src=defaultCoffee;else image.hidden=true;};const info=el('div',{class:'overview-card-info'},el('div',{class:'overview-story'},image,el('p',{class:'overview-description'},e.description)),eventPopularity(e));root.append(info);root.classList.add('single-month');}else root.append(el('div',{class:'overview-card-info'},el('p',{class:'overview-description'},e.description),eventPopularity(e)));return root;}
-function overviewCard(e){const slots=eventSlots(e);return el('a',{class:'overview-event',href:`#event/${e.id}`},el('div',{class:'overview-event-heading'},el('h3',{},e.title),badge(e.status)),el('p',{class:'overview-event-meta'},e.city+' · '+(e.selectedSlotId?'最终时段':slots.length>1?slots.length+' 个候选时段':'活动时间')),eventTags(e),overviewCardVisual(e,slots),el('div',{class:'overview-event-bottom'},el('span',{},`${e.counts?.joined||0} 人报名 · ${e.rules.minPeople} 人起成行`),el('span',{},'查看活动流程 →')));}
+function overviewFact(icon,label,value,detail){return el('div',{class:'overview-card-fact'},el('dt',{},el('span',{class:'overview-fact-icon '+icon,'aria-hidden':'true'}),label),el('dd',{},el('strong',{},value),detail?el('small',{},detail):null));}
+function overviewCard(e){const slots=eventSlots(e),timing=overviewTiming(slots,!e.selectedSlotId&&(e.rules.timeSlots?.length||0)>1);return el('a',{class:'overview-event',href:`#event/${e.id}`},el('div',{class:'overview-event-heading'},el('div',{class:'overview-title-copy'},el('h3',{},e.title),el('p',{class:'overview-description'},e.description)),el('div',{class:'overview-heading-meta'},eventTags(e),badge(e.status))),el('div',{class:'overview-card-visual'},el('dl',{class:'overview-card-facts'},overviewFact('time','时间',timing.dates,timing.rhythm),overviewFact('place','地点',e.city,'具体地点以活动最新安排为准')),el('div',{class:'overview-card-info'},eventPopularity(e),el('span',{class:'button dark overview-card-cta'},overviewAction(e)))));}
 function overviewMap(events){const wrapper=el('div',{class:'overview-map-real'});requestAnimationFrame(()=>{if(wrapper.isConnected)mountMap(wrapper,events,state.city,city=>{state.city=city;changeOverview();});});return wrapper;}
 function renderHome(){state.detailVisible=false;state.pendingEvent=null;const range=overviewRange(),invalid=range&&(!range.from||!range.to||range.from>range.to),filtered=invalid||state.overviewLoading?[]:state.events,facets=state.overview||{cities:[],tags:[],total:0},total=invalid||state.overviewError?0:state.pagination?.total||0;const heading=el('header',{class:'overview-heading'},el('div',{},el('span',{class:'eyebrow'},'DATA COFFEE / 活动总览'),el('h1',{class:'coffee-dags-title'},el('s',{class:'airflow-joke'},'Airflow'),' Data Coffee flow'),el('p',{class:'muted'},'把相聚调度起来 · 按城市和时间找到你的下一次 coffee chat。')),el('span',{class:'overview-total'},(state.overviewLoading?'…':total)+' 场活动'));
 const periods=el('div',{class:'overview-periods','aria-label':'按时间筛选'},[['all','全部时间'],['current','本月'],['next','下月'],['custom','自选日期']].map(([key,label])=>btn(label,()=>{state.period=key;changeOverview();},'filter'+(state.period===key?' active':''))));periods.querySelectorAll('button').forEach((b,i)=>b.setAttribute('aria-pressed',String(['all','current','next','custom'][i]===state.period)));
