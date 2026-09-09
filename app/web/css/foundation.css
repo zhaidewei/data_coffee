@@ -1,0 +1,80 @@
+/* 全局主题、基础控件与跨页面标签/进度。基础规则在前，组件断点在后；主题差异由 light.css 覆盖。 */
+
+:root { color-scheme: dark; --paper: #171d2c; --white: #1b2333; --ink: #e5eaf2; --muted: #a0aec0; --orange: #58a6ff; --line: #2b3548; --green: #41c88c; --serif: inherit; --state-success: #19b83a; --state-running: #06bdd4; --state-waiting: #92a5bb; --state-repairing: #ff9900; --state-cancelled: #ff3855; --state-optional: #ba86e8
+; }
+.button { font-size: 12px; padding: 8px 13px; border-radius: 4px; box-shadow: none; }
+.button:hover { background: #293a54; transform: none; }
+.button.dark { background: #2864d9; border-color: #3479ed; color: #fff; }
+.button.orange { background: #2864d9; border-color: #3479ed; color: #fff; }
+.button.dark:hover { background: #3479ed; }
+.button.orange:hover { background: #3479ed; }
+.button.danger { color: #ff8b99; border-color: #834754; }
+.button.quiet:hover { background: #24334a; }
+#app { max-width: 1600px; padding: 0 24px 40px; }
+.badge { background: #304b70; color: #ddecff; }
+input { background: #141c2a; color: var(--ink); border-color: #3c4c63; border-radius: 4px; }
+textarea { background: #141c2a; color: var(--ink); border-color: #3c4c63; border-radius: 4px; }
+select { background: #141c2a; color: var(--ink); border-color: #3c4c63; border-radius: 4px; }
+input::placeholder { color: #8292a8; }
+textarea::placeholder { color: #8292a8; }
+input:focus { outline: 2px solid #579cec; }
+textarea:focus { outline: 2px solid #579cec; }
+select:focus { outline: 2px solid #579cec; }
+input[type=checkbox] { accent-color: #4b98f7; }
+input[type=radio] { accent-color: #4b98f7; }
+.form-note { background: #263448; color: #c6d4e6; border-color: #3c526f; }
+.notice { background: #263448; color: #c6d4e6; border-color: #3c526f; }
+dialog { background: #1b2333; color: var(--ink); border-color: #3c4c63; }
+.ai-panel { background: #1b2333; color: var(--ink); border-color: #3c4c63; }
+dialog::backdrop { background: #070d1dbb; }
+fieldset { border-color: var(--line); }
+footer { border-color: var(--line); color: var(--muted); font-size: 11px; }
+a:focus-visible { outline: 2px solid #8dc2ff; outline-offset: 3px; }
+button:focus-visible { outline: 2px solid #8dc2ff; outline-offset: 3px; }
+.badge.draft { background: #9f273c; color: #fff; border: 1px solid #e56c81; }
+dialog .preview { background: var(--paper); color: var(--ink); border: 1px solid var(--line); }
+dialog .preview p { color: var(--ink); }
+dialog .preview h3 { color: var(--ink); }
+footer .footer-links { margin: 8px 0; }
+footer .footer-credit { margin: 8px 0; }
+footer .footer-links a { color: var(--orange); }
+footer .footer-credit a { color: var(--orange); }
+footer a:hover { text-decoration: underline; }
+.badge.recruiting { background: #008a12; color: #fff; border: 1px solid #00a51b; box-shadow: 0 0 0 2px #00a51b14; }
+.badge.confirmed { background: #008a12; color: #fff; }
+.badge.completed { background: #008a12; color: #fff; }
+.badge.repairing { background: #a85600; color: #fff; }
+.badge.cancelled { background: #c72542; color: #fff; }
+.badge.rejected { background: #c72542; color: #fff; }
+.badge.waitlisted { background: #435a73; color: #fff; }
+.badge.pending { background: #435a73; color: #fff; }
+.event-tags { display: flex; flex-wrap: wrap; gap: 6px; }
+.event-tags:empty { display: none; }
+.event-tags span { font-size: 11px; padding: 4px 9px; border-radius: 12px; background: var(--paper); color: var(--muted); border: 1px solid var(--line); }
+.event-progress { margin: 14px 0; font-size: 11px; color: var(--muted); }
+.event-progress progress { display: block; appearance: none; width: 100%; height: 6px; margin-top: 6px; border: 0; border-radius: 8px; overflow: hidden; background: var(--line); }
+.event-progress progress::-webkit-progress-bar { background: var(--line); }
+.event-progress progress::-webkit-progress-value { background: #279d83; border-radius: 8px; }
+.event-progress progress::-moz-progress-bar { background: #279d83; }
+.event-popularity { --heat: #488adb
+; }
+.event-popularity.steady { --heat: #279d83
+; }
+.event-popularity.warm { --heat: #d68a20
+; }
+.event-popularity.hot { --heat: #e06058
+; }
+.popularity-heading { display: flex; justify-content: space-between; gap: 8px; }
+.popularity-heading strong { color: var(--heat); }
+.popularity-track { position: relative; }
+.event-popularity progress::-webkit-progress-value { background: var(--heat); }
+.event-popularity progress::-moz-progress-bar { background: var(--heat); }
+.capacity-marker { position: absolute; top: -3px; height: 12px; width: 2px; background: var(--muted); }
+.event-popularity small { display: block; margin-top: 6px; font-size: 10px; }
+
+@media (max-width:600px) {
+  #app { padding: 18px 14px 32px; }
+  .detail-header.code-header { padding: 10px 0; margin: 0 0 10px; text-align: left; }
+  .detail-header.code-header h1 { font-size: 19px; line-height: 1.35; margin: 6px 0; letter-spacing: 0; }
+  .detail-header.code-header .eyebrow { display: none; }
+}

@@ -1,0 +1,47 @@
+/* 活动决策、报名操作与分享。基础规则在前，组件断点在后；主题差异由 light.css 覆盖。 */
+
+.detail-primary-actions { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+.detail-primary-actions .registration-cta { background: #2563eb; color: #fff; border: 1px solid #60a5fa; font-size: 16px; font-weight: 700; min-height: 44px; padding: 10px 26px; border-radius: 6px; }
+.registration-cta:hover:not(:disabled) { background: #1d4ed8; }
+.registration-cta:disabled { opacity: .55; cursor: not-allowed; }
+.detail-primary-actions .share-cta { border-color: #5f7898; color: var(--ink); min-height: 44px; }
+.decision-note { max-width: 1080px; margin: 0 auto 18px; padding: 14px 16px; border: 1px solid var(--line); border-left: 4px solid #38d6d3; border-radius: 5px; background: var(--white); color: var(--ink); }
+.decision-note strong { font-size: 13px; }
+.decision-note p { margin: 6px 0 0; color: var(--muted); font-size: 12px; line-height: 1.65; }
+.registration-thread { margin-top: 8px; padding: 10px 12px; border-left: 3px solid #5f7898; background: var(--white); border-radius: 3px; }
+.registration-reply { margin: 9px 0 0; padding-top: 9px; border-top: 1px solid var(--line); color: var(--ink); white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; }
+.registration-thread .button { margin-top: 10px; }
+.share-dialog { max-width: 520px; }
+.share-preview { margin: 16px auto; min-height: 180px; display: grid; place-items: center; border-radius: 6px; color: var(--muted); overflow: hidden; max-width: 390px; border: 0; background: transparent; }
+.share-preview img { display: block; width: 100%; height: auto; }
+.share-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.share-actions .button { display: flex; align-items: center; justify-content: center; min-height: 46px; margin: 0; text-align: center; }
+.event-decision { margin: 22px 0 18px; padding: 22px 24px; border: 1px solid var(--line); border-left: 5px solid var(--orange); border-radius: 8px; background: var(--white); text-align: left; max-width: 900px; }
+.event-decision h2 { font-size: 26px; margin: 8px 0; color: var(--ink); }
+.event-decision p { font-size: 13px; line-height: 1.6; color: var(--muted); margin: 8px 0; }
+.event-decision .eyebrow { font-size: 10px; }
+.decision-facts { display: grid; grid-template-columns: 1fr 1fr; gap: 16px 24px; margin: 16px 0; }
+.decision-facts dt { font-size: 11px; color: var(--muted); margin-bottom: 5px; }
+.decision-facts dd { font-size: 15px; color: var(--ink); margin: 0; line-height: 1.5; overflow-wrap: anywhere; }
+.event-decision small { color: var(--muted); font-size: 11px; }
+.decision-confirmed { border-left-color: #20b879; }
+.decision-cancelled { border-left-color: #e56472; }
+.decision-repairing { border-left-color: #dfa442; }
+.decision-completed { border-left-color: #8497ac; }
+.event-decision>h2 { margin-top: 0; }
+.decision-slot-list { display: flex; flex-direction: column; gap: 4px; }
+.decision-facts dd small { display: block; margin-top: 5px; }
+.event-decision .decision-deadline { font-size: 12px; margin: 12px 0 0; }
+.participant-entry { display: block; margin-top: 8px; padding: 5px 10px; font-size: 12px; min-height: 32px; border-color: var(--line); color: var(--orange); background: var(--paper); }
+
+@media (max-width:600px) {
+  .detail-primary-actions { gap: 8px; }
+  .detail-primary-actions .registration-cta { font-size: 12px; min-height: 38px; padding: 8px 13px; }
+  .detail-primary-actions .share-cta { font-size: 12px; min-height: 38px; padding: 8px 13px; }
+  .decision-note { margin-bottom: 10px; padding: 10px 12px; }
+  .decision-note p { font-size: 11px; }
+  .share-actions { grid-template-columns: 1fr; }
+  .event-decision { padding: 16px; }
+  .event-decision h2 { font-size: 22px; }
+  .decision-facts { grid-template-columns: 1fr; }
+}

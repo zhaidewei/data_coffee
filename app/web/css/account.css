@@ -1,0 +1,41 @@
+/* 账户菜单、token 管理与 CLI 文档。基础规则在前，组件断点在后；主题差异由 light.css 覆盖。 */
+
+.account-menu { position: fixed; left: 80px; bottom: 12px; width: 260px; max-height: 80vh; overflow: auto; z-index: 30; background: var(--white); color: var(--ink); border: 1px solid var(--line); border-radius: 6px; padding: 8px; box-shadow: 0 8px 28px #0003; }
+.account-menu-heading { padding: 14px 12px; border-bottom: 1px solid var(--line); margin-bottom: 6px; }
+.account-menu-heading small { display: block; color: var(--muted); }
+.account-menu-heading strong { display: block; }
+.account-menu-item { display: block; width: 100%; padding: 10px 12px; text-align: left; background: transparent; color: inherit; border: 0; border-radius: 4px; cursor: pointer; font: inherit; }
+.account-menu summary { display: block; width: 100%; padding: 10px 12px; text-align: left; background: transparent; color: inherit; border: 0; border-radius: 4px; cursor: pointer; font: inherit; }
+.account-menu-item:hover { background: var(--paper); }
+.account-menu summary:hover { background: var(--paper); }
+.appearance-options { padding-left: 12px; border-left: 2px solid var(--line); margin: 0 12px; }
+.appearance-options button[aria-pressed=true] { color: var(--orange); font-weight: 700; }
+.appearance-options button[aria-pressed=true]::after { content: ' ✓'; }
+.cli-reference { max-width: 980px; padding: 28px 0; margin: auto; }
+.cli-reference h1 { font-size: 32px; }
+.cli-reference h2 { font-size: 21px; margin-top: 32px; }
+.cli-reference p { color: var(--muted); }
+.cli-reference li { color: var(--muted); }
+.cli-reference a { color: var(--orange); }
+.cli-reference pre { background: var(--white); border: 1px solid var(--line); padding: 18px; border-radius: 5px; overflow: auto; }
+.cli-reference code { font-family: ui-monospace,SFMono-Regular,Consolas,monospace; font-size: 12px; color: var(--ink); }
+.cli-table { overflow: auto; }
+.cli-reference table { width: 100%; border-collapse: collapse; text-align: left; }
+.cli-reference th { padding: 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+.cli-reference td { padding: 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+.cli-reference section { scroll-margin-top: 20px; }
+.token-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--line); }
+.token-row small { display: block; color: var(--muted); }
+.token-list { margin-top: 24px; }
+.token-secret textarea { width: 100%; margin-top: 12px; word-break: break-all; }
+
+@media (max-width:600px) {
+  .account-menu { left: auto; right: 10px; top: 74px; bottom: auto; max-width: calc(100vw - 20px); }
+  .cli-reference { padding: 0; }
+  .cli-reference th { padding: 8px; }
+  .cli-reference td { padding: 8px; }
+}
+
+@media (min-width:601px) {
+  .account-menu { left: 68px; }
+}

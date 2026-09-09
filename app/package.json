@@ -2,7 +2,9 @@
   "name": "data-coffee-web",
   "private": true,
   "type": "module",
-  "bin": { "dc-flow": "cli/dc-flow.mjs" },
+  "bin": {
+    "dc-flow": "cli/dc-flow.mjs"
+  },
   "scripts": {
     "cli": "node cli/dc-flow.mjs",
     "dev": "wrangler dev --port 8787 --var APP_ENV:development --var APP_URL:http://localhost:8787",
@@ -16,14 +18,16 @@
     "release:preflight": "node scripts/release-preflight.mjs",
     "release:readback": "node scripts/release-readback.mjs",
     "release:deploy": "node scripts/release-deploy.mjs",
-    "deploy:dev": "npm run release:deploy"
+    "deploy:dev": "npm run release:deploy",
+    "test:css": "node scripts/css-smoke.cjs"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "5.20260905.1",
-    "wrangler": "4.129.0",
+    "@types/node": "22.20.1",
+    "miniflare": "5.20260903.0-alpha",
+    "playwright": "1.58.2",
     "typescript": "5.9.3",
     "vitest": "3.2.7",
-    "miniflare": "5.20260903.0-alpha",
-    "@types/node": "22.20.1"
+    "wrangler": "4.129.0"
   }
 }

@@ -1,0 +1,91 @@
+/* 活动流程图、状态与节点对话框。基础规则在前，组件断点在后；主题差异由 light.css 覆盖。 */
+
+.journey-lead { padding-top: 24px; }
+.journey-lead h1 { font-size: 28px; letter-spacing: 0; }
+.dag-workspace { background: var(--paper); border-color: var(--line); border-radius: 5px; }
+.dag-graph { background-color: #141b29; background-image: radial-gradient(#304057 1px,transparent 1px); }
+.dag-toolbar { color: #94b4da; font-size: 11px; }
+.dag-links path { stroke: #6783a5; stroke-width: 1.7; }
+.dag-node { background: #202d43; color: #e4ecf7; border-color: #465b77; border-left-color: #8294ac; border-radius: 4px; box-shadow: none; padding: 8px 10px; cursor: pointer; transition: box-shadow .15s,border-color .15s; }
+.dag-node:hover { background: #293c58; box-shadow: 0 4px 14px #1769c22b; border-color: #60a5fa; }
+.dag-node small { color: #afc1d7; font-size: 10px; margin-top: 4px; max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dag-node.dag-open { border-left-color: #2bd5d1; }
+.dag-node[aria-pressed=true] { outline-color: #63acff; background: #29415f; }
+.dag-panel { background: #1b2333; border-color: var(--line); padding: 20px; }
+.dag-panel h2 { font-size: 18px; }
+.dag-panel .code-node-detail { color: var(--ink); }
+.dag-panel .preference-summary>* { background: #222e42; color: var(--ink); border-color: var(--line); }
+.dag-panel .slot-result { background: #222e42; color: var(--ink); border-color: var(--line); }
+.dag-task-id { display: block; color: #7bbaff; font: 10px/1.3 ui-monospace,SFMono-Regular,Consolas,monospace; margin-bottom: 4px; }
+.dag-node strong { font-size: 11px; padding-right: 12px; display: block; }
+.draft-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 16px; margin: 0 0 20px; border: 1px solid var(--line); background: var(--white); border-radius: 5px; }
+.draft-toolbar>span { margin-right: auto; color: var(--muted); }
+.state-success { --state-color: var(--state-success); --state-bg: #153629
+; }
+.state-running { --state-color: var(--state-running); --state-bg: #14333f
+; }
+.state-waiting { --state-color: var(--state-waiting); --state-bg: #252e3d
+; }
+.state-repairing { --state-color: var(--state-repairing); --state-bg: #403020
+; }
+.state-cancelled { --state-color: var(--state-cancelled); --state-bg: #3b2230
+; }
+.state-draft { --state-color: var(--state-cancelled); --state-bg: #3b2230
+; }
+.state-optional { --state-color: var(--state-optional); --state-bg: #30293f
+; }
+.dag-node[class*=state-] { border-left-color: var(--state-color); background: var(--state-bg); }
+.dag-node[class*=state-]:hover { border-left-color: var(--state-color); background: var(--state-bg); }
+.dag-node[class*=state-][aria-pressed=true] { border-left-color: var(--state-color); background: var(--state-bg); }
+.dag-node[class*=state-] .dag-task-id { color: var(--state-color); }
+.dag-node[class*=state-] small { color: #d0dae6; }
+.dag-node:active { box-shadow: inset 0 0 0 2px #60a5fa; }
+.dag-entry { display: block; text-align: right; font-size: 10px; font-weight: 600; color: var(--orange); margin-top: 5px; }
+.dag-modal-workspace { display: block !important; }
+.node-dialog.dag-panel { padding: 0; border: 0; max-height: none; background: transparent; }
+.node-dialog .registration-detail { display: block; }
+.dag-modal-workspace .dag-graph { position: relative; top: auto; }
+.dag-links marker path { stroke: none; }
+.dag-metrics { position: absolute; transform: translateX(-50%); width: 180px; text-align: center; font-size: 10px; line-height: 16px; color: var(--muted); background: var(--paper); pointer-events: auto; }
+.dag-completion { display: flex; align-items: center; justify-content: center; gap: 6px; }
+.dag-completion progress { width: 70px; height: 6px; accent-color: #00a873; }
+.dag-time { display: block; }
+.dag-node .dag-metrics { position: static; display: block; transform: none; width: auto; background: transparent; text-align: left; line-height: 16px; margin-top: 7px; color: inherit; }
+.dag-node .dag-completion { justify-content: flex-start; }
+.dag-node .dag-entry { position: absolute; right: 9px; top: 5px; margin: 0; }
+
+@media (max-width:600px) {
+  .journey-lead h1 { font-size: 23px; }
+  #app:has(.dag-workspace) { padding: 8px 10px 24px; }
+  #app:has(.dag-workspace)>.back { display: block; margin: 0; font-size: 11px; }
+  .dag-workspace { display: block; overflow: visible; }
+  .dag-graph { padding: 10px 5px 5px; overflow: visible; position: sticky; top: 0; z-index: 5; border-bottom: 1px solid var(--line); }
+  .dag-toolbar { font-size: 10px; margin: 0 6px 6px; }
+  .dag-graph>p { display: none; }
+  .dag-canvas { min-width: 0; width: 100%; height: 290px; }
+  .dag-node { top: calc(var(--node-y)*.46px) !important; width: 30%; padding: 5px; border-left-width: 3px; height: 44px; }
+  .dag-node strong { font-size: 10px; line-height: 1.25; }
+  .dag-node .dag-task-id { font-size: 8px; margin-bottom: 2px; display: none; }
+  .dag-node small { display: none; }
+  .dag-node[aria-pressed=true] { outline-offset: 1px; outline-width: 2px; }
+  .dag-panel { padding: 12px; border-top: 0; max-height: none; }
+  .dag-panel h2 { font-size: 16px; margin: 4px 0; }
+  .dag-panel>small { display: none; }
+  .dag-panel>p { font-size: 11px; margin: 4px 0 10px; }
+  .dag-panel .registration-detail { grid-template-columns: 1fr; }
+  .draft-toolbar { padding: 8px; gap: 6px; margin-bottom: 10px; }
+  .draft-toolbar>span { font-size: 11px; }
+  .draft-toolbar .button { font-size: 11px; padding: 6px 8px; }
+  .dag-node .dag-entry { font-size: 9px; right: 4px; top: 4px; }
+  .dag-canvas .dag-metrics { top: calc(var(--node-y)*.46px + 45px) !important; width: 30%; font-size: 8px; line-height: 12px; }
+  .dag-completion { gap: 3px; }
+  .dag-completion progress { width: 30px; }
+  .dag-modal-workspace .dag-canvas { height: 378px; }
+  .dag-modal-workspace .dag-node { top: calc(var(--node-y)*.6px) !important; height: 58px; }
+  .dag-canvas .dag-node .dag-metrics { position: static; width: auto; font-size: 9px; line-height: 12px; margin-top: 4px; }
+  .dag-node .dag-completion { gap: 3px; }
+  .dag-node .dag-completion progress { width: 25px; }
+}
+
+/* 键盘焦点高于手机选中态，保持原有 3px 轮廓。 */
+.dag-node:focus-visible { outline: 3px solid #60a5fa; outline-offset: 3px; }
