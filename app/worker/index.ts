@@ -4,7 +4,7 @@ import {advance,deleteDraft,execute,insertActivity,project,tick} from './store';
 import {currentUser,handleAuth,handleTokens} from './auth';
 import {drainMail} from './mail';
 import {handleAI} from './ai';
-import {body} from './http';
+import {body,secureResponse} from './http';
 import {listEvents} from './list';
 export {body} from './http';
 
@@ -12,9 +12,11 @@ const json=(data:unknown,status=200)=>Response.json(data,{status});
 export default {
   async fetch(request:Request,env:Env):Promise<Response>{
     const url=new URL(request.url);
-    if(!url.pathname.startsWith('/api/'))return env.ASSETS.fetch(request);
+    const isApi=url.pathname.startsWith('/api/');
     let res:Response;
     try{
+      if(!isApi)res=await env.ASSETS.fetch(request);
+      else {
       if(!['GET','HEAD'].includes(request.method)){
         const origin=request.headers.get('origin');
         if(origin&&origin!==url.origin)fail('请求来源不允许',403);
@@ -59,11 +61,12 @@ export default {
           }else fail('请求方法不支持',405);
         }
       }
+      }
     }catch(error){
       if(error instanceof DomainError)res=json({error:error.message},error.status);
       else {console.error('request_failed');res=json({error:'服务暂时不可用，请稍后重试'},503);}
     }
-    const secured=new Response(res.body,res);secured.headers.set('Cache-Control','no-store');secured.headers.set('X-Content-Type-Options','nosniff');secured.headers.set('Referrer-Policy','same-origin');return secured;
+    return secureResponse(res,isApi);
   },
   async scheduled(_event:ScheduledController,env:Env,_ctx:ExecutionContext){await tick(env);await drainMail(env,10);}
 } satisfies ExportedHandler<Env>;

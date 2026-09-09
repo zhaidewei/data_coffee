@@ -4,7 +4,7 @@
   "main": "worker/index.ts",
   "compatibility_date": "2026-09-05",
   "workers_dev": true,
-  "assets": { "directory": "./web", "binding": "ASSETS", "not_found_handling": "single-page-application", "run_worker_first": ["/api/*"] },
+  "assets": { "directory": "./web", "binding": "ASSETS", "not_found_handling": "single-page-application", "run_worker_first": true },
   "d1_databases": [{ "binding": "DB", "database_name": "data-coffee-dev", "database_id": "18676803-d978-4816-aa50-40dc4f2c1c12", "migrations_dir": "migrations" }],
   "vars": { "APP_ENV": "production", "APP_URL": "https://data-coffee-dev.dewei-zhai.workers.dev", "APP_VERSION": "local", "EMAIL_FROM": "dewei.zhai@gmail.com", "EMAIL_FROM_NAME": "Data Coffee", "MAIL_DAILY_LIMIT": "280" },
   "triggers": { "crons": ["* * * * *"] },
