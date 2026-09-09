@@ -99,7 +99,7 @@ it('load、advance 和列表共用 fail-closed 解码，损坏数据不产生副
   await env.DB.prepare('INSERT INTO activities(id,version,document,commit_id,next_due,created_at) VALUES(?,?,?,?,?,?)').bind(future.id,0,JSON.stringify(future),'seed',now-1,now).run();
   await expect(load(env,future.id)).rejects.toMatchObject({code:'activity_schema_unsupported'});
   await expect(advance(env,future.id,()=>now)).rejects.toMatchObject({code:'activity_schema_unsupported'});
-  await expect(listEvents(env,null,new URLSearchParams(),()=>now)).rejects.toMatchObject({code:'activity_schema_unsupported'});
+  await expect(listEvents(env,null,new URLSearchParams())).rejects.toMatchObject({code:'activity_schema_unsupported'});
   expect((await env.DB.prepare('SELECT version,document FROM activities WHERE id=?').bind(future.id).first())!).toMatchObject({version:0,document:JSON.stringify(future)});
   expect((await env.DB.prepare('SELECT count(*) count FROM audit').first<{count:number}>())!.count).toBe(0);
   expect((await env.DB.prepare('SELECT count(*) count FROM outbox').first<{count:number}>())!.count).toBe(0);

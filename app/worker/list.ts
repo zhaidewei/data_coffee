@@ -1,6 +1,6 @@
 import type {Activity,Env,User} from './types';
-import {fail,nextDue} from './engine';
-import {advance,project} from './store';
+import {fail} from './engine';
+import {project} from './store';
 import {decodeActivityDocument} from './activity-schema';
 // @ts-expect-error Dependency-free JavaScript shared with the browser.
 import {matchesTime} from '../web/shared/time-rules.js';
@@ -12,15 +12,14 @@ function rangeOf(params:URLSearchParams){
   if(!valid(from)||!valid(to)||from!>to!)fail('请选择有效日期范围');
   return {from:from!,to:to!};
 }
-/** Read documents in one query; only rule transitions need a per-event CAS read/write. */
-export async function listEvents(env:Env,user:User|null,params:URLSearchParams,clock=Date.now){
+/** Overview reads stored snapshots only; scheduled reconciliation owns state transitions. */
+export async function listEvents(env:Env,user:User|null,params:URLSearchParams){
   const requestedPage=positive(params.get('page'),1),pageSize=Math.min(20,positive(params.get('pageSize'),12));
   const range=rangeOf(params),city=params.get('city')||'',tag=(params.get('tag')||'').toLowerCase();
   const rows=await env.DB.prepare("SELECT id,version,document,created_at FROM activities WHERE json_extract(document,'$.status')!='draft' OR json_extract(document,'$.ownerId')=? ORDER BY created_at DESC,id DESC").bind(user?.id??null).all<{id:string;version:number;document:string;created_at:number}>();
   const visible:Activity[]=[];
   for(const row of rows.results){
-    let e:Activity=decodeActivityDocument(row.document,{id:row.id,version:row.version,createdAt:row.created_at});const due=nextDue(e);
-    if((due!==null&&due<=clock())||e.repairs.some(r=>['talks','cohosts','roles'].includes(r.key)))e=await advance(env,e.id,clock);
+    const e:Activity=decodeActivityDocument(row.document,{id:row.id,version:row.version,createdAt:row.created_at});
     if(e.status!=='draft'||e.ownerId===user?.id)visible.push(e);
   }
   const dated=visible.filter(e=>matchesTime(e,range));
