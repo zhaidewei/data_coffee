@@ -41,6 +41,10 @@ const user = { id: 'smoke-user', nickname: '测试成员', publicNickname: true 
                     await page.goto(url + '/' + hash);
                     await page.locator(view === 'home' ? '.overview-event' : view === 'form' ? '.wide-form' : view === 'cli' ? '.cli-reference' : '.dag-node').first().waitFor({ timeout: 5000 }).catch(async (e) => { console.error(await page.locator('body').innerText()); throw e; });
                     await page.evaluate(theme => document.documentElement.dataset.theme = theme, theme);
+                    if (view === 'home') {
+                        assert.equal(await page.locator('.overview-card-cta').innerText(), '查看并报名');
+                        assert.equal(await page.locator('.event-popularity progress').getAttribute('aria-valuetext'), '4 人已报名 · 1 人候补 · 人气 63%');
+                    }
                     if (view === 'form') {
                         await page.locator('.city-toggle').click();
                         assert.equal(await page.locator('.city-options').isVisible(), true);
