@@ -13,7 +13,7 @@ export const help = `Data Coffee CLI（Node.js 22+）
   auth request --data <JSON|@文件|->       {email}，发送验证码
   auth verify --data <JSON|@文件|->        {email,code,nickname}，返回用户
   auth verify --data ... --session-only   仅输出会话 JSON，供管道捕获
-  auth me | auth logout
+  auth me | auth export | auth logout
 选项：--base-url <URL>（或 DATA_COFFEE_BASE_URL，默认 http://localhost:8787）
       DATA_COFFEE_TOKEN 或 --token-stdin 提供个人访问令牌（dcf_ + 64位小写十六进制）
       token 通过 Authorization Bearer 发送；不能与会话认证同时提供。
@@ -53,7 +53,7 @@ export async function run(argv, io={}) {
     else if(group==='events'&&command==='get'&&pos.length===3)path=`/api/events/${id}`;
     else if(group==='events'&&command==='create'&&pos.length===2){path='/api/events';method='POST';}
     else if(group==='events'&&command==='action'&&pos.length===4){path=`/api/events/${id}/actions`;method='POST';}
-    else if(group==='auth'&&['request','verify','logout','me'].includes(command)&&pos.length===2){path=command==='me'?'/api/me':`/api/auth/${command}`;method=command==='me'?'GET':'POST';}
+    else if(group==='auth'&&['request','verify','logout','me','export'].includes(command)&&pos.length===2){path=command==='me'?'/api/me':command==='export'?'/api/me/export':`/api/auth/${command}`;method=['me','export'].includes(command)?'GET':'POST';}
     else throw new CliError('命令无效，请使用 --help');
     if(id&&!/^[a-zA-Z0-9-]+$/.test(id))throw new CliError('活动 ID 格式无效');
     if(opts['--session-only']&&!(group==='auth'&&command==='verify'))throw new CliError('--session-only 仅用于 auth verify');

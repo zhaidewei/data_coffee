@@ -51,7 +51,7 @@ describe('Agent CLI HTTP contract',()=>{
 });
 
 describe('CLI 输入边界与失败处理',()=>{
-  it.each([['events','get','event-123','/api/events/event-123','GET'],['auth','me','','/api/me','GET'],['auth','logout','','/api/auth/logout','POST']])('路由 %s %s',async(group,command,id,path,method)=>{
+  it.each([['events','get','event-123','/api/events/event-123','GET'],['auth','me','','/api/me','GET'],['auth','export','','/api/me/export','GET'],['auth','logout','','/api/auth/logout','POST']])('路由 %s %s',async(group,command,id,path,method)=>{
     const r=await invoke([group,command,...(id?[id]:[])]);expect(r.code).toBe(0);expect(new URL(r.fetch.mock.calls[0][0]).pathname).toBe(path);expect(r.fetch.mock.calls[0][1].method).toBe(method);
   });
   it('帮助不请求网络',async()=>{const r=await invoke(['--help']);expect(r.code).toBe(0);expect(r.stdout).toContain('events action');expect(r.fetch).not.toHaveBeenCalled();});

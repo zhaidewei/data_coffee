@@ -141,6 +141,11 @@ function setupNickname(){
  const f=el('form',{},el('h2',{},'邮箱已验证，留个名字吧'),el('p',{class:'muted'},'这个名字用于社区交流，之后可以在账户 → 个人资料修改。'),field('昵称','nickname','text',''),el('button',{class:'button dark',type:'submit'},'保存昵称'));
  f.onsubmit=async e=>{e.preventDefault();try{const r=await api('/api/me',{nickname:f.elements.nickname.value},'PATCH');state.user=r.user;updateAccount();closeModal();await route();}catch(err){errorAt(f,err);}};modal(f);
 }
+async function downloadMyData(){
+ const data=await api('/api/me/export');
+ const blob=new Blob([JSON.stringify(data,null,2)+'\n'],{type:'application/json'}),url=URL.createObjectURL(blob),link=document.createElement('a');
+ link.href=url;link.download=`data-coffee-${new Date(data.exportedAt).toISOString().slice(0,10)}.json`;document.body.append(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),0);toast('个人数据已下载');
+}
 async function tokenSettings(){
  const root=el('div',{},el('h2',{},'个人 API Tokens'),el('p',{class:'muted'},'供 dc-flow 和 Agent 使用。Token 继承你的活动权限，可随时撤销。'));
  modal(root);
@@ -150,7 +155,7 @@ async function tokenSettings(){
  form.onsubmit=async e=>{e.preventDefault();const button=form.querySelector('button');button.disabled=true;try{const d=await api('/api/tokens',{name:form.elements.name.value,scope:form.elements.scope.value,expiresDays:Number(form.elements.expiresDays.value)});const secret=el('textarea',{readOnly:true,rows:3,value:d.token,'aria-label':'新建 API Token'});const box=el('div',{class:'form-note'},el('strong',{},'只显示这一次，请存入本地 secret。'),secret,btn('复制 Token',async()=>{try{await navigator.clipboard.writeText(d.token);toast('已复制');}catch{secret.select();}},'button'),el('p',{},'终端运行 secret add data-coffee-api-token，按提示粘贴。'),btn('已保存，隐藏 Token',()=>box.remove()));root.querySelector('.token-secret')?.remove();box.classList.add('token-secret');root.insertBefore(box,list);await refresh();}catch(err){errorAt(root,err);}finally{button.disabled=false;}};
  root.append(form,list);await refresh();
 }
-function account(){if(!state.user)return login();const f=el('form',{},el('h2',{},'我的社区名片'),el('p',{class:'muted'},state.user.email),field('昵称','nickname','text',state.user.nickname),check('公开显示我的昵称（关闭后，活动管理者仍可查看）','publicNickname',state.user.publicNickname),el('button',{class:'button dark',type:'submit'},'保存设置'),btn('退出登录',async()=>{try{await api('/api/auth/logout',{});state.user=null;updateAccount();closeModal();route();}catch(e){errorAt(f,e);}},'button quiet'));f.onsubmit=async e=>{e.preventDefault();try{const r=await api('/api/me',{nickname:f.elements.nickname.value,publicNickname:f.elements.publicNickname.checked},'PATCH');state.user=r.user;updateAccount();closeModal();toast('设置已保存');route();}catch(err){errorAt(f,err);}};modal(f);}
+function account(){if(!state.user)return login();const f=el('form',{},el('h2',{},'我的社区名片'),el('p',{class:'muted'},state.user.email),field('昵称','nickname','text',state.user.nickname),check('公开显示我的昵称（关闭后，活动管理者仍可查看）','publicNickname',state.user.publicNickname),el('button',{class:'button dark',type:'submit'},'保存设置'),btn('下载我的数据',async()=>{try{await downloadMyData();}catch(e){errorAt(f,e);}},'button quiet'),btn('退出登录',async()=>{try{await api('/api/auth/logout',{});state.user=null;updateAccount();closeModal();route();}catch(e){errorAt(f,e);}},'button quiet'));f.onsubmit=async e=>{e.preventDefault();try{const r=await api('/api/me',{nickname:f.elements.nickname.value,publicNickname:f.elements.publicNickname.checked},'PATCH');state.user=r.user;updateAccount();closeModal();toast('设置已保存');route();}catch(err){errorAt(f,err);}};modal(f);}
 $('#account-button').onclick=()=>{
   const old=$('#account-menu');if(old){old.remove();return;}
   const close=()=>{$('#account-menu')?.remove();$('#account-button').setAttribute('aria-expanded','false');};
