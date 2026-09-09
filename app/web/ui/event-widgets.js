@@ -4,8 +4,8 @@ import {date} from './display.js';
 
 function eventTags(e){return el('div',{class:'event-tags'},(e.tags||[]).map(tag=>el('span',{},'# '+tag)));}
 function eventPopularity(e){
- const {percent,heat,label,scale}=popularity(e),{headline,limit}=participationSummary(e);
- return el('div',{class:'event-progress event-popularity '+heat},el('div',{class:'popularity-heading'},el('strong',{},headline),el('span',{},label)),el('div',{class:'popularity-track'},el('progress',{max:scale,value:percent,'aria-label':'活动人气','aria-valuetext':`${headline} · 人气 ${percent}%`}),el('span',{class:'capacity-marker',style:'left:'+(100/scale*100)+'%','aria-hidden':'true'})),el('small',{},limit+' · 刻线表示满额'));
+ const {people,capacity,percent,heat,label}=popularity(e),{headline,minimum}=participationSummary(e),marker=Math.min(100,minimum/capacity*100);
+ return el('div',{class:'event-progress event-popularity '+heat},el('div',{class:'popularity-heading'},el('strong',{},headline),el('span',{},label)),el('div',{class:'popularity-track'},el('progress',{max:capacity,value:Math.min(people,capacity),'aria-label':'活动人气','aria-valuetext':`${headline} · 人气 ${percent}%`}),el('span',{class:'quorum-marker',style:'left:'+marker+'%','aria-hidden':'true'})),el('small',{},`成行 ${minimum} 人 · 右侧为上限 ${capacity} 人`));
 }
 function conditionNode(c){return el('div',{class:`condition ${c.satisfied?'ok':''}`},el('div',{class:'condition-top'},el('span',{},c.label),el('span',{},c.satisfied?'✓ 已满足':'待补齐')),el('strong',{},`${c.current} / ${c.required}`),el('div',{class:'progress-track'},el('span',{style:`width:${c.required?Math.min(100,c.current/c.required*100):100}%`})),el('span',{class:'muted'},c.continuous?'成行后仍需持续满足':'成行时检查'));}
 function registrationCalendar(slots,selected,finalId){

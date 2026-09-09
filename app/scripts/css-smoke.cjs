@@ -44,6 +44,8 @@ const user = { id: 'smoke-user', nickname: '测试成员', publicNickname: true 
                     if (view === 'home') {
                         assert.equal(await page.locator('.overview-card-cta').innerText(), '查看并报名');
                         assert.equal(await page.locator('.event-popularity progress').getAttribute('aria-valuetext'), '4 人已报名 · 1 人候补 · 人气 63%');
+                        assert.deepEqual(await page.locator('.popularity-track').evaluate(root => ({ max: Number(root.querySelector('progress').max), value: Number(root.querySelector('progress').value), marker: parseFloat(root.querySelector('.quorum-marker').style.left) })), { max: 8, value: 5, marker: 37.5 });
+                        assert.deepEqual(await page.locator('.overview-fact-icon').evaluateAll(nodes=>nodes.map(node=>node.classList.item(1))),['time','place']);
                     }
                     if (view === 'form') {
                         await page.locator('.city-toggle').click();
