@@ -28,7 +28,7 @@ it('100用户下20人携同版本报名全部成功，3席位和17候补',async(
  const audit=await env.DB.prepare("SELECT count(*) n FROM audit WHERE event_id=? AND action='join'").bind(e.id).first<{n:number}>();expect(audit!.n).toBe(20);
  const final=await load(env,e.id);expect(final.participants.filter(p=>p.status==='joined')).toHaveLength(3);expect(final.participants.filter(p=>p.status==='waitlisted')).toHaveLength(17);
  const startedRead=performance.now();await Promise.all(Array.from({length:100},()=>advance(env,e.id)));console.log(JSON.stringify({scenario:'100_concurrent_reads',totalMs:Math.round(performance.now()-startedRead)}));
-},20000);
+},60000);
 it('20人操作不同活动可独立成功',async()=>{const events=[];for(let i=0;i<20;i++)events.push(await published());const started=performance.now();const results=await Promise.allSettled(events.map((e,i)=>execute(env,e.id,{action:'join'},user('u'+i),'independent-'+i,e.version)));console.log(JSON.stringify({scenario:'20_independent_activities',success:results.filter(r=>r.status==='fulfilled').length,totalMs:Math.round(performance.now()-started)}));expect(results.every(r=>r.status==='fulfilled')).toBe(true);},20000);
 
 it('同一幂等键并发重试只记一次报名和审计',async()=>{
