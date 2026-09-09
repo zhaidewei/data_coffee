@@ -1,6 +1,7 @@
 import type {Activity, Command, Env, Notice, User} from './types';
 import {applyCommand, conditions, createActivity, DomainError, fail, isManager, joined, nextDue, reconcile} from './engine';
 import {decodeActivityDocument,encodeActivityDocument} from './activity-schema';
+import {CronBudget,CronBudgetExceeded} from './cron-budget';
 
 async function loadRecord(env:Env,id:string):Promise<{activity:Activity;document:string}> {
   const row=await env.DB.prepare('SELECT id,version,document,created_at FROM activities WHERE id=?').bind(id).first<{id:string;version:number;document:string;created_at:number}>();
@@ -26,10 +27,16 @@ async function commit(env:Env,old:Activity,e:Activity,notices:Notice[],actor:str
   const marker=crypto.randomUUID();e.version=old.version+1;
   const sql=[env.DB.prepare('UPDATE activities SET version=?,document=?,commit_id=?,next_due=? WHERE id=? AND version=?').bind(e.version,encodeActivityDocument(e),marker,nextDue(e),e.id,old.version),
     env.DB.prepare('INSERT INTO audit(id,event_id,actor_id,action,version,created_at) SELECT ?,?,?,?,?,? WHERE EXISTS(SELECT 1 FROM activities WHERE id=? AND commit_id=?)').bind(marker,e.id,actor,action,e.version,now,e.id,marker)];
-  for(let i=0;i<notices.length;i++){
-    const n=notices[i];
-    const link=env.APP_URL?`\n\n活动详情：${env.APP_URL}/#event/${e.id}`:'';
-    sql.push(env.DB.prepare('INSERT INTO outbox(id,user_id,subject,body,created_at,kind,priority,deliver_before) SELECT ?,?,?,?,?,?,?,? WHERE EXISTS(SELECT 1 FROM activities WHERE id=? AND commit_id=?)').bind(`${marker}:${i}`,n.userId,n.subject,n.text+link,now,n.kind,n.priority,n.deliverBefore,e.id,marker));
+  const link=env.APP_URL?`\n\n活动详情：${env.APP_URL}/#event/${e.id}`:'';
+  if(notices.length){
+    // A single JSON parameter keeps D1 statement use independent of recipient
+    // count. The INSERT remains in the same transactional batch and is gated by
+    // the successful activity CAS marker.
+    const rows=notices.map((n,index)=>[`${marker}:${index}`,n.userId,n.subject,n.text+link,now,n.kind,n.priority,n.deliverBefore]);
+    sql.push(env.DB.prepare(`INSERT INTO outbox(id,user_id,subject,body,created_at,kind,priority,deliver_before)
+      SELECT json_extract(value,'$[0]'),json_extract(value,'$[1]'),json_extract(value,'$[2]'),json_extract(value,'$[3]'),
+        json_extract(value,'$[4]'),json_extract(value,'$[5]'),json_extract(value,'$[6]'),json_extract(value,'$[7]')
+      FROM json_each(?) WHERE EXISTS(SELECT 1 FROM activities WHERE id=? AND commit_id=?)`).bind(JSON.stringify(rows),e.id,marker));
   }
   if(action==='edit'||action==='describe')for(const tag of e.tags||[])sql.push(env.DB.prepare('INSERT OR IGNORE INTO tags(key,label) SELECT ?,? WHERE EXISTS(SELECT 1 FROM activities WHERE id=? AND commit_id=?)').bind(tag.toLowerCase(),tag,e.id,marker));
   const result=await env.DB.batch(sql);return (result[0].meta.changes??0)>0;
@@ -116,8 +123,19 @@ export async function project(env:Env,e:Activity,user:User|null,summary=false):P
   if(manager){base.audit=(await env.DB.prepare('SELECT action,version,created_at FROM audit WHERE event_id=? ORDER BY version DESC LIMIT 50').bind(e.id).all()).results;}
   return base;
 }
-export async function tick(env:Env){
-  const rows=await env.DB.prepare('SELECT id FROM activities WHERE next_due<=? ORDER BY next_due LIMIT 20').bind(Date.now()).all<{id:string}>();
-  for(const row of rows.results){try{await advance(env,row.id);}catch{console.error('activity_reconcile_failed');}}
-  await env.DB.prepare('DELETE FROM ai_proposals WHERE expires_at<?').bind(Date.now()-86400000).run();
+export interface TickStats {dueScanned:number;attempted:number;settled:number;failed:number;budgetExhausted:boolean;phaseError:string|null}
+export async function tick(env:Env,budget?:CronBudget):Promise<TickStats>{
+  const bounded=budget?.env(env,'tick')??env;
+  const now=Date.now();
+  const stats:TickStats={dueScanned:0,attempted:0,settled:0,failed:0,budgetExhausted:false,phaseError:null};
+  let rows:{results:{id:string}[]};
+  try{rows=await bounded.DB.prepare('SELECT id FROM activities WHERE next_due<=? ORDER BY next_due LIMIT 20').bind(now).all<{id:string}>();stats.dueScanned=rows.results.length;}
+  catch(error){if(error instanceof CronBudgetExceeded)stats.budgetExhausted=true;else{stats.phaseError='activity_scan_failed';console.error('activity_scan_failed');}return stats;}
+  for(const row of rows.results){
+    try{budget?.takeWork('tick');stats.attempted++;await advance(bounded,row.id);stats.settled++;}
+    catch(error){if(error instanceof CronBudgetExceeded){stats.budgetExhausted=true;break;}stats.failed++;console.error('activity_reconcile_failed');}
+  }
+  try{await bounded.DB.prepare('DELETE FROM ai_proposals WHERE expires_at<?').bind(now-86400000).run();}
+  catch(error){if(error instanceof CronBudgetExceeded)stats.budgetExhausted=true;else{stats.phaseError='ai_cleanup_failed';console.error('ai_cleanup_failed');}}
+  return stats;
 }

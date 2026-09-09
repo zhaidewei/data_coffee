@@ -55,17 +55,20 @@ const NEVER = 8640000000000000;
  * terminally failed for operator review, since delivery cannot then be proven.
  * status=sent means provider accepted, not confirmed recipient delivery.
  */
-export async function drainMail(env: Env, limit = 10, queryBudget = 40): Promise<void> {
+export interface MailDrainStats {claimed:number;sent:number;retryableFailures:number;terminalFailures:number;manualReviewFailures:number;d1Statements:number;budgetExhausted:boolean;phaseError:string|null}
+export async function drainMail(env: Env, limit = 10, queryBudget = 40): Promise<MailDrainStats> {
   // Count actual SQL statements, reserving the worst-case recovery cost before
   // claiming: 8 for an independent mail, 12 for a digest, plus 4 for cleanup.
   const budget = Math.max(0,Math.min(40,Number.isFinite(queryBudget)?Math.floor(queryBudget):40));
   const count = Math.max(0, Math.min(50, Math.floor(Number.isFinite(limit) ? limit : 10)));
-  if (budget < 4) return;
+  const stats:MailDrainStats={claimed:0,sent:0,retryableFailures:0,terminalFailures:0,manualReviewFailures:0,d1Statements:0,budgetExhausted:false,phaseError:null};
+  if (budget < 4) {stats.budgetExhausted=true;return stats;}
   let queries = 0;
   const prepare = (sql: string) => { queries++; return env.DB.prepare(sql); };
+  try{
   for (let index = 0; index < count; index++) {
     const remaining = budget - queries - 4;
-    if (remaining < 8) break;
+    if (remaining < 8) {stats.budgetExhausted=true;break;}
     const now = Date.now(), lease = now + 120_000;
     const row = await prepare(`UPDATE outbox SET status='sending',claimed_until=?,attempts=attempts+1
       WHERE id=(SELECT id FROM outbox WHERE digest_id IS NULL
@@ -76,6 +79,7 @@ export async function drainMail(env: Env, limit = 10, queryBudget = 40): Promise
       RETURNING id,user_id,subject,body,attempts,claimed_until,kind,priority,deliver_before,
         EXISTS(SELECT 1 FROM outbox m WHERE m.digest_id=outbox.id) AS has_members`).bind(lease, remaining, now, now).first<MailRow>();
     if (!row) break;
+    stats.claimed++;
     const eligible = canDigestNotice(row.kind,row.priority,row.deliver_before);
     const grouped = eligible || !!row.has_members;
     const finish = async (status: string, error: string | null, next: number, decrement = false) => {
@@ -134,7 +138,8 @@ export async function drainMail(env: Env, limit = 10, queryBudget = 40): Promise
       if (!await reserveBudget(env, false, prepare)) {
         const tomorrow = Math.floor(now / 86400000) * 86400000 + 86400000;
         await finish('pending', 'daily_budget_exhausted', tomorrow, true);
-        return;
+        stats.d1Statements=queries;
+        return stats;
       }
       // Persist before external side effect, so a worker crash preserves the key.
       const dispatch = prior || await prepare(`INSERT INTO mail_dispatch(outbox_id,provider_key,first_attempt) VALUES (?,?,?)
@@ -143,10 +148,13 @@ export async function drainMail(env: Env, limit = 10, queryBudget = 40): Promise
       if (!dispatch) throw new MailError('dispatch_missing');
       await deliver(env, frozen.payload);
       await finish('sent', null, 0);
+      stats.sent++;
     } catch (error) {
       const known = error instanceof MailError ? error : new MailError('internal_mail_error', true);
       const retry = known.retryable && row.attempts < 5;
       await finish('failed', known.code, retry ? now + Math.min(600_000, 30_000 * 2 ** (row.attempts - 1)) : NEVER);
+      if(retry)stats.retryableFailures++;else stats.terminalFailures++;
+      if(known.code.endsWith('_manual_review'))stats.manualReviewFailures++;
     }
   }
   // Bounded cleanup carries no PII into logs and keeps auth auxiliary tables small.
@@ -157,4 +165,11 @@ export async function drainMail(env: Env, limit = 10, queryBudget = 40): Promise
     prepare('DELETE FROM auth_rate_limits WHERE window_start<?').bind(now - 86400000),
     prepare('DELETE FROM mail_daily_budget WHERE day<?').bind(new Date(now - 7 * 86400000).toISOString().slice(0, 10)),
   ]);
+  stats.d1Statements=queries;
+  return stats;
+  }catch{
+    stats.d1Statements=queries;stats.phaseError='mail_drain_failed';
+    console.error('mail_drain_failed');
+    return stats;
+  }
 }

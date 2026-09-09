@@ -27,6 +27,8 @@ npm run dev
 
 `npm run deploy:dev` 依次执行 preflight、`npm ci`、类型检查、测试和 dry-run build，再次核对 Git 与 D1 后才调用 Wrangler。部署把完整 Git SHA 写入 `APP_VERSION` 和 Worker 版本说明。`/api/health` 返回该版本；配置里的 `APP_VERSION=local` 仅作为绕过发布脚本时的明显占位值。
 
+`/api/health/operations` 返回不含用户与活动内容的实时运维汇总：到期活动数量与最老积压年龄、可领取邮件数量与最老积压年龄，以及终态失败和需人工核对数量。Scheduled invocation 共用 50 条 D1 statement、12 个工作单位的账本；活动结算最多使用 30 条 statement 和 8 个工作单位，固定为邮件保留 20 条 statement 和 4 个工作单位。每轮写一条 `cron_completed` 结构化日志，包含两阶段结果和实际预算消耗。
+
 部署后脚本只读回 canonical production URL，并要求 health 环境为 `production`；`DATA_COFFEE_BASE_URL` 不影响部署。它核对 `/api/health`、读取 `/api/events?page=1&pageSize=1` 验证 pagination 元数据，并通过只读 D1 查询输出 outbox 状态计数及已到期活动数量。活动列表 API 会按现有业务规则先结算到期活动，因此这一步可能推进活动状态和生成通知；单页读取可避免为读回反复扫描。脚本输出不包含活动正文、用户、邮箱、邮件内容或密钥。也可单独执行 `npm run release:readback -- --expected-version <40位Git SHA>`；只有这个独立 readback 接受 `DATA_COFFEE_BASE_URL` 或 `--base-url` 指定另一个不含凭据的 HTTPS 地址。
 
 CI 会比较当前提交与 PR base（push 到 `main` 时使用 push 前 SHA）：`app/migrations/` 只允许新增文件，修改、删除或重命名已经存在的 migration 都会失败。首次 push 没有有效 base SHA 时跳过该项。
