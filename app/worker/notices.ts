@@ -11,6 +11,7 @@ export const noticePolicies = {
   repair_resolved: {priority: 1},
   registration_not_selected: {priority: 1},
   activity_time_selected: {priority: 1},
+  capacity_expanded: {priority: 1},
   registration_reply: {priority: 1},
   application_submitted: {priority: 2},
   venue_standby: {priority: 1},

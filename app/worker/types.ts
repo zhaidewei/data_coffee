@@ -38,7 +38,7 @@ export interface Participant {
 export interface Application { id: string; userId: string; kind: 'cohost'|'host'|'talk'|'venue'|'material'|'pledge'; title: string; detail: string; capacity?: number; address?: string; amount?: number; duration?: number; status: 'pending'|'approved'|'rejected'|'withdrawn'; reason?: string; reviewedBy?: string; updatedAt: number }
 export interface Condition { key: string; label: string; current: number; required: number; satisfied: boolean; continuous: boolean }
 export interface Repair { key: string; label: string; openedAt: number; deadline: number }
-export interface Receipt { at: number; kind: string; conditions: Condition[]; reason: string; descriptionChange?: {before: string; after: string} }
+export interface Receipt { at: number; kind: string; conditions: Condition[]; reason: string; descriptionChange?: {before: string; after: string}; capacityChange?: {before: number; after: number} }
 export interface Activity {
   schemaVersion: 1;
   tags?: string[];
