@@ -33,7 +33,7 @@ export interface Participant {
   availableSlotIds?: string[]; timePreference?: string; placePreference?: string; transportPreferences?: string[]; registrationMessage?: string;
   promotionOfferUntil?: number;
   promotionOfferExpired?: boolean;
-  registrationReply?: string; registrationRepliedAt?: number;
+  registrationReply?: string; registrationRepliedAt?: number; registrationRepliedBy?: string;
 }
 export interface Application { id: string; userId: string; kind: 'cohost'|'host'|'talk'|'venue'|'material'|'pledge'; title: string; detail: string; capacity?: number; address?: string; amount?: number; duration?: number; status: 'pending'|'approved'|'rejected'|'withdrawn'; reason?: string; reviewedBy?: string; updatedAt: number }
 export interface Condition { key: string; label: string; current: number; required: number; satisfied: boolean; continuous: boolean }

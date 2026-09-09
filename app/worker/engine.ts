@@ -207,6 +207,7 @@ export function applyCommand(e:Activity,cmd:Command,userId:string,now:number,out
       if(!p)fail('报名成员不存在',404);
       p.registrationReply=textValue(cmd.reply,'回复',500);
       p.registrationRepliedAt=now;
+      p.registrationRepliedBy=userId;
       out.push({userId:p.userId,...noticeSemantics('registration_reply'),subject:'发起人回复了你的报名留言',text:`「${e.title}」的发起人回复：${p.registrationReply}`});
       break;
     }

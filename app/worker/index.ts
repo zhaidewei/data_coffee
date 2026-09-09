@@ -6,6 +6,7 @@ import {drainMail} from './mail';
 import {handleAI} from './ai';
 import {body,secureResponse} from './http';
 import {listEvents} from './list';
+import {exportUserData} from './self-export';
 export {body} from './http';
 
 const json=(data:unknown,status=200)=>Response.json(data,{status});
@@ -32,6 +33,10 @@ export default {
         const context={...env,APP_URL:env.APP_URL||url.origin};
         const ai=url.pathname.startsWith('/api/ai')?await handleAI(request,context,user):null;
         if(ai)res=ai;
+        else if(url.pathname==='/api/me/export'&&request.method==='GET'){
+          if(!user)fail('请先验证邮箱登录',401);
+          res=json(await exportUserData(env,user!));
+        }
         else if(url.pathname==='/api/tags'&&request.method==='GET'){
           const query=(url.searchParams.get('q')||'').normalize('NFKC').trim().toLowerCase().slice(0,20);
           const rows=await env.DB.prepare('SELECT label FROM tags WHERE instr(key,?)>0 ORDER BY key LIMIT 50').bind(query).all<{label:string}>();
