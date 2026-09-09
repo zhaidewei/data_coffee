@@ -1,3 +1,4 @@
+import {canDigestNotice,digestEligibleSQL,noticeOrderSQL} from './notices';
 import type { Env } from './types';
 
 class MailError extends Error {
@@ -46,11 +47,9 @@ export async function sendEmail(env: Env, to: string, subject: string, text: str
   if (!await reserveBudget(env, true)) throw new MailError('daily_budget_exhausted', true);
   await deliver(env, payload(env, to, subject, text, crypto.randomUUID()));
 }
-interface MailRow { id: string; user_id: string; subject: string; body: string; attempts: number; claimed_until: number }
+interface MailRow { id: string; user_id: string; subject: string; body: string; attempts: number; claimed_until: number; kind: string; priority: number; deliver_before: number | null; has_members: number }
 const NEVER = 8640000000000000;
-// Notice currently has no structured urgency. Only this exact informational
-// subject is eligible; unknown and deadline-bearing notices stay independent.
-const DIGEST_SUBJECT = '有新的待处理申请';
+
 /** Claims prevent concurrent sends. Provider keys protect retries after a crash.
  * Brevo deduplicates for 30 minutes; after 25 minutes an unresolved dispatch is
  * terminally failed for operator review, since delivery cannot then be proven.
@@ -70,17 +69,19 @@ export async function drainMail(env: Env, limit = 10, queryBudget = 40): Promise
     const now = Date.now(), lease = now + 120_000;
     const row = await prepare(`UPDATE outbox SET status='sending',claimed_until=?,attempts=attempts+1
       WHERE id=(SELECT id FROM outbox WHERE digest_id IS NULL
-        AND (subject!='有新的待处理申请' OR ?>=12) AND
+        AND (? >= 12 OR (NOT (${digestEligibleSQL}) AND NOT EXISTS(SELECT 1 FROM outbox m WHERE m.digest_id=outbox.id))) AND
         ((status IN ('pending','failed') AND next_attempt<=? AND attempts<5)
           OR (status='sending' AND claimed_until<=?))
-        ORDER BY CASE WHEN subject IN ('有候补名额，请确认参加','候补确认期限已更新','候补已入选','活动等待补齐') THEN 0
-          WHEN subject='有新的待处理申请' THEN 2 ELSE 1 END,created_at,id LIMIT 1)
-      RETURNING id,user_id,subject,body,attempts,claimed_until`).bind(lease, remaining, now, now).first<MailRow>();
+        ORDER BY ${noticeOrderSQL} LIMIT 1)
+      RETURNING id,user_id,subject,body,attempts,claimed_until,kind,priority,deliver_before,
+        EXISTS(SELECT 1 FROM outbox m WHERE m.digest_id=outbox.id) AS has_members`).bind(lease, remaining, now, now).first<MailRow>();
     if (!row) break;
+    const eligible = canDigestNotice(row.kind,row.priority,row.deliver_before);
+    const grouped = eligible || !!row.has_members;
     const finish = async (status: string, error: string | null, next: number, decrement = false) => {
       await env.DB.batch([
         // Only terminal results propagate to members; retries use the leader.
-        ...(row.subject === DIGEST_SUBJECT ? [prepare(`UPDATE outbox SET status=?,last_error=?,next_attempt=?,sent_at=?
+        ...(grouped ? [prepare(`UPDATE outbox SET status=?,last_error=?,next_attempt=?,sent_at=?
           WHERE digest_id=? AND (?='sent' OR ?=?) AND EXISTS
           (SELECT 1 FROM outbox WHERE id=? AND status='sending' AND attempts=? AND claimed_until=?)`)
           .bind(status, error, next, status === 'sent' ? Date.now() : null, row.id, status, next, NEVER, row.id, row.attempts, lease)] : []),
@@ -104,21 +105,21 @@ export async function drainMail(env: Env, limit = 10, queryBudget = 40): Promise
       if (prior && !frozen) throw new MailError('legacy_delivery_manual_review');
       if (!frozen) {
         if (!context.email) throw new MailError('recipient_missing');
-        if (row.subject === DIGEST_SUBJECT) {
+        if (eligible) {
           // Atomically take only never-attempted, due notices. A concurrently
           // claimed leader is excluded. Membership survives a crash before freeze.
           await prepare(`UPDATE outbox SET status='bundled',digest_id=? WHERE id IN
-            (SELECT id FROM outbox WHERE user_id=? AND subject=? AND status='pending'
+            (SELECT id FROM outbox WHERE user_id=? AND (${digestEligibleSQL}) AND status='pending'
               AND attempts=0 AND next_attempt<=? AND digest_id IS NULL AND id!=?
               AND NOT EXISTS(SELECT 1 FROM mail_dispatch WHERE outbox_id=outbox.id)
               ORDER BY created_at,id LIMIT max(0,19-(SELECT count(*) FROM outbox WHERE digest_id=?)))
             AND EXISTS(SELECT 1 FROM outbox WHERE id=? AND status='sending' AND attempts=? AND claimed_until=?)`)
-            .bind(row.id,row.user_id,DIGEST_SUBJECT,now,row.id,row.id,row.id,row.attempts,lease).run();
+            .bind(row.id,row.user_id,now,row.id,row.id,row.id,row.attempts,lease).run();
         }
-        const members = row.subject === DIGEST_SUBJECT ? (await prepare('SELECT subject,body FROM outbox WHERE digest_id=? ORDER BY created_at,id')
+        const members = grouped ? (await prepare('SELECT subject,body FROM outbox WHERE digest_id=? ORDER BY created_at,id')
           .bind(row.id).all<{subject:string;body:string}>()).results : [];
         const items = [{subject:row.subject,body:row.body},...members];
-        const subject = items.length > 1 ? `有 ${items.length} 项新的待处理申请` : row.subject;
+        const subject = items.length > 1 ? `有 ${items.length} 项活动通知` : row.subject;
         const body = items.length > 1 ? items.map((item,i)=>`${i+1}. ${item.subject}\n${item.body}`).join('\n\n') : row.body;
         const stable = payload(env,context.email,subject,body,crypto.randomUUID());
         frozen = await prepare(`INSERT INTO mail_payload(outbox_id,payload) SELECT ?,? WHERE EXISTS

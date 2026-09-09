@@ -1,3 +1,4 @@
+import {noticeSemantics, type NoticeSemantics} from './notices';
 import type { Activity, Application, Command, Condition, Notice, Participant, Rules } from './types';
 import {ACTIVITY_SCHEMA_VERSION} from './activity-schema';
 
@@ -66,18 +67,18 @@ export function conditions(e: Activity): Condition[] {
   return result;
 }
 function recipients(e:Activity) {return [...new Set([e.ownerId,...e.participants.filter(p=>p.status!=='left').map(p=>p.userId),...e.applications.filter(a=>a.status==='approved').map(a=>a.userId)])];}
-function announce(e:Activity,out:Notice[],subject:string,body:string) {for(const userId of recipients(e))out.push({userId,subject,text:`${e.title}（${e.city}）\n${body}`});}
+function announce(e:Activity,out:Notice[],semantics:NoticeSemantics,subject:string,body:string) {for(const userId of recipients(e))out.push({...semantics,userId,subject,text:`${e.title}（${e.city}）\n${body}`});}
 function record(e:Activity,at:number,kind:string,reason:string) {e.receipts.push({at,kind,conditions:conditions(e),reason});}
-function cancel(e:Activity,now:number,reason:string,out:Notice[]) {e.status='cancelled';e.reason=reason;e.repairs=[];record(e,now,'cancelled',reason);announce(e,out,'活动已取消',reason);}
+function cancel(e:Activity,now:number,reason:string,out:Notice[]) {e.status='cancelled';e.reason=reason;e.repairs=[];record(e,now,'cancelled',reason);announce(e,out,noticeSemantics('activity_cancelled'),'活动已取消',reason);}
 function promote(e:Activity,now:number,out:Notice[]) {
   if (!e.rules.waitlist || now>=e.rules.promotionDeadline || now>=e.rules.startsAt) return;
   let free=e.rules.maxPeople-joined(e).length-e.participants.filter(p=>p.status==='waitlisted'&&(p.promotionOfferUntil||0)>now).length;
   for (const p of e.participants.filter(p=>p.status==='waitlisted'&&(!e.selectedSlotId||p.availableSlotIds?.includes(e.selectedSlotId))).sort((a,b)=>a.order-b.order)) {
     if(p.promotionOfferUntil)continue;
     if(free--<=0)break;
-    if(e.rules.promotionLeadHours!==undefined){p.promotionOfferUntil=Math.min(e.rules.promotionDeadline,...e.repairs.filter(r=>r.key==='people').map(r=>r.deadline),(['confirmed','repairing'].includes(e.status)&&joined(e).length<e.rules.minPeople?now+e.rules.repairMinutes*60000:Infinity));out.push({userId:p.userId,subject:'有候补名额，请确认参加',text:`「${e.title}」有名额为你保留。请在 ${new Date(p.promotionOfferUntil).toISOString()} 前打开活动页面确认报名；未确认不计入参加人数。`});continue;}
+    if(e.rules.promotionLeadHours!==undefined){p.promotionOfferUntil=Math.min(e.rules.promotionDeadline,...e.repairs.filter(r=>r.key==='people').map(r=>r.deadline),(['confirmed','repairing'].includes(e.status)&&joined(e).length<e.rules.minPeople?now+e.rules.repairMinutes*60000:Infinity));out.push({userId:p.userId,...noticeSemantics('promotion_offer',p.promotionOfferUntil),subject:'有候补名额，请确认参加',text:`「${e.title}」有名额为你保留。请在 ${new Date(p.promotionOfferUntil).toISOString()} 前打开活动页面确认报名；未确认不计入参加人数。`});continue;}
     p.status='joined';
-    out.push({userId:p.userId,subject:'候补已入选',text:`你已正式报名「${e.title}」。请查看活动时间和地点，如无法参加请及时退出。`});
+    out.push({userId:p.userId,...noticeSemantics('promotion_confirmed'),subject:'候补已入选',text:`你已正式报名「${e.title}」。请查看活动时间和地点，如无法参加请及时退出。`});
   }
 }
 /** All overdue deadlines are resolved BEFORE a new command. No client-supplied time. */
@@ -88,7 +89,7 @@ export function reconcile(e:Activity,now:number,out:Notice[]):void {
   if(e.status==='recruiting' && now>=e.rules.recruitmentDeadline) {
     const missing=conditions(e).filter(c=>!c.satisfied);
     if(missing.length){cancel(e,e.rules.recruitmentDeadline,`征集截止条件不足：${missing.map(c=>`${c.label} ${c.current}/${c.required}`).join('、')}`,out);return;}
-    e.status='confirmed';record(e,e.rules.recruitmentDeadline,'confirmed','全部成团条件满足');announce(e,out,'活动已成团','已按发布规则成团，请查看活动详情。');
+    e.status='confirmed';record(e,e.rules.recruitmentDeadline,'confirmed','全部成团条件满足');announce(e,out,noticeSemantics('activity_confirmed'),'活动已成团','已按发布规则成团，请查看活动详情。');
   }
   if(e.status==='confirmed'||e.status==='repairing') {
     const expired=e.repairs.filter(r=>r.deadline<=now);
@@ -109,14 +110,14 @@ function syncRepairs(e:Activity,now:number,out:Notice[]) {
     const deadline=Math.min(now+e.rules.repairMinutes*60000,e.rules.startsAt);
     e.repairs.push({key:c.key,label:c.label,openedAt:now,deadline});
     record(e,now,'repair_opened',`${c.label}不足，限时补齐`);
-    announce(e,out,'活动等待补齐',`${c.label}不足；补齐截止时间：${new Date(deadline).toISOString()}。到期未补齐将自动取消。`);
+    announce(e,out,noticeSemantics('repair_required',deadline),'活动等待补齐',`${c.label}不足；补齐截止时间：${new Date(deadline).toISOString()}。到期未补齐将自动取消。`);
   }
   const peopleDeadline=e.repairs.find(r=>r.key==='people')?.deadline;
   if(peopleDeadline!==undefined)for(const p of e.participants)if(p.status==='waitlisted'&&(p.promotionOfferUntil||0)>peopleDeadline){
     p.promotionOfferUntil=peopleDeadline;
-    out.push({userId:p.userId,subject:'候补确认期限已更新',text:`「${e.title}」正在等待人数补齐，请在 ${new Date(peopleDeadline).toISOString()} 前确认参加；到期人数不足将取消活动。`});
+    out.push({userId:p.userId,...noticeSemantics('promotion_deadline_changed',peopleDeadline),subject:'候补确认期限已更新',text:`「${e.title}」正在等待人数补齐，请在 ${new Date(peopleDeadline).toISOString()} 前确认参加；到期人数不足将取消活动。`});
   }
-  if(cleared.length){record(e,now,'repair_resolved',`${cleared.map(c=>c.label).join('、')}已补齐`);announce(e,out,'活动条件已补齐',`${cleared.map(c=>c.label).join('、')}已恢复。请查看其他条件和最新状态。`);}
+  if(cleared.length){record(e,now,'repair_resolved',`${cleared.map(c=>c.label).join('、')}已补齐`);announce(e,out,noticeSemantics('repair_resolved'),'活动条件已补齐',`${cleared.map(c=>c.label).join('、')}已恢复。请查看其他条件和最新状态。`);}
   e.status=e.repairs.length?'repairing':'confirmed';
 }
 function manager(e:Activity,id:string){if(!isManager(e,id))fail('仅发布者或已批准协办可操作',403);}
@@ -151,10 +152,10 @@ export function applyCommand(e:Activity,cmd:Command,userId:string,now:number,out
         const canAttend=p.availableSlotIds?.includes(slot.id);
         p.status=canAttend&&seats>0?'joined':canAttend&&e.rules.waitlist?'waitlisted':'left';
         if(p.status==='joined')seats--;
-        if(p.status==='left')out.push({userId:p.userId,subject:'报名未入选',text:canAttend?'最终时段席位已满，本场不开放候补；本次报名已结束。':'最终时段不在你选择的可参加时间内，本次报名已结束。'});
+        if(p.status==='left')out.push({userId:p.userId,...noticeSemantics('registration_not_selected'),subject:'报名未入选',text:canAttend?'最终时段席位已满，本场不开放候补；本次报名已结束。':'最终时段不在你选择的可参加时间内，本次报名已结束。'});
       }
       record(e,now,'time_selected','最终时段已确认');
-      announce(e,out,'活动时间已确认',new Date(slot.startsAt).toISOString()+'；仅能参加该时段的报名者计入成行人数，请查看报名状态。');
+      announce(e,out,noticeSemantics('activity_time_selected'),'活动时间已确认',new Date(slot.startsAt).toISOString()+'；仅能参加该时段的报名者计入成行人数，请查看报名状态。');
       break;
     }
     case 'join': {
@@ -206,7 +207,7 @@ export function applyCommand(e:Activity,cmd:Command,userId:string,now:number,out
       if(!p)fail('报名成员不存在',404);
       p.registrationReply=textValue(cmd.reply,'回复',500);
       p.registrationRepliedAt=now;
-      out.push({userId:p.userId,subject:'发起人回复了你的报名留言',text:`「${e.title}」的发起人回复：${p.registrationReply}`});
+      out.push({userId:p.userId,...noticeSemantics('registration_reply'),subject:'发起人回复了你的报名留言',text:`「${e.title}」的发起人回复：${p.registrationReply}`});
       break;
     }
     case 'apply': {
@@ -222,7 +223,7 @@ export function applyCommand(e:Activity,cmd:Command,userId:string,now:number,out
       if(kind==='talk'){if(!Number.isInteger(cmd.duration)||Number(cmd.duration)<1||Number(cmd.duration)>180)fail('分享时长须为1–180分钟');a.duration=Number(cmd.duration);}
       e.applications.push(a);
       const reviewers=[e.ownerId];
-      for(const reviewer of new Set(reviewers))out.push({userId:reviewer,subject:'有新的待处理申请',text:`「${e.title}」有新的${kind}申请，请进入活动管理查看。`});break;
+      for(const reviewer of new Set(reviewers))out.push({userId:reviewer,...noticeSemantics('application_submitted'),subject:'有新的待处理申请',text:`「${e.title}」有新的${kind}申请，请进入活动管理查看。`});break;
     }
     case 'review': {
       const a=e.applications.find(a=>a.id===cmd.applicationId);if(!a)fail('申请不存在',404);
@@ -230,16 +231,16 @@ export function applyCommand(e:Activity,cmd:Command,userId:string,now:number,out
       if(['cohost','venue','host'].includes(a.kind))owner(e,userId);else manager(e,userId);
       if(a.status!=='pending')fail('申请已处理或撤回',409);
       if(typeof cmd.approved!=='boolean')fail('请选择批准或拒绝');
-      if(a.kind==='venue'&&cmd.approved){const capacity=cmd.capacity??a.capacity;if(!Number.isInteger(capacity)||Number(capacity)<1||Number(capacity)>10000)fail('确认场地前请填写实际可容纳人数');a.capacity=Number(capacity);for(const other of e.applications)if(other.kind==='venue'&&other.status==='approved'&&other.id!==a.id){other.status='pending';other.updatedAt=now;other.reviewedBy=userId;other.reason='已选择其他最终场地，本提议保留备用';out.push({userId:other.userId,subject:'场地已转为备用',text:`「${e.title}」已确认其他场地，你提供的「${other.title}」保留备用，无需按最终场地继续准备。`});}}
+      if(a.kind==='venue'&&cmd.approved){const capacity=cmd.capacity??a.capacity;if(!Number.isInteger(capacity)||Number(capacity)<1||Number(capacity)>10000)fail('确认场地前请填写实际可容纳人数');a.capacity=Number(capacity);for(const other of e.applications)if(other.kind==='venue'&&other.status==='approved'&&other.id!==a.id){other.status='pending';other.updatedAt=now;other.reviewedBy=userId;other.reason='已选择其他最终场地，本提议保留备用';out.push({userId:other.userId,...noticeSemantics('venue_standby'),subject:'场地已转为备用',text:`「${e.title}」已确认其他场地，你提供的「${other.title}」保留备用，无需按最终场地继续准备。`});}}
       a.status=cmd.approved?'approved':'rejected';a.reviewedBy=userId;a.reason=textValue(cmd.reason??'','审核说明',500,0);a.updatedAt=now;
-      out.push({userId:a.userId,subject:'申请审批结果',text:`你在「${e.title}」的申请已${cmd.approved?'通过':'拒绝'}。${a.reason}`});break;
+      out.push({userId:a.userId,...noticeSemantics('application_reviewed'),subject:'申请审批结果',text:`你在「${e.title}」的申请已${cmd.approved?'通过':'拒绝'}。${a.reason}`});break;
     }
     case 'withdraw': case 'revoke': {
       const a=e.applications.find(a=>a.id===cmd.applicationId);if(!a)fail('申请不存在',404);
       if(cmd.action==='withdraw'){if(a.userId!==userId)fail('只能撤回本人的申请',403);}else{owner(e,userId);if(a.kind!=='cohost')fail('本入口仅撤销协办资格');}
       if(a.status==='withdrawn')break;
       a.status='withdrawn';a.updatedAt=now;
-      for(const id of new Set([a.userId,e.ownerId]))out.push({userId:id,subject:'申请或资格已撤回',text:`「${e.title}」的${a.kind}申请或资格已撤回。`});break;
+      for(const id of new Set([a.userId,e.ownerId]))out.push({userId:id,...noticeSemantics('application_withdrawn'),subject:'申请或资格已撤回',text:`「${e.title}」的${a.kind}申请或资格已撤回。`});break;
     }
     case 'cancel': owner(e,userId);cancel(e,now,textValue(cmd.reason,'取消原因',500),out);return;
     default: fail('不支持的操作');

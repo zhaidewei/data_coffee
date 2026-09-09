@@ -17,7 +17,7 @@ const rules = (): Rules => { const now=Date.now(); return {
 beforeAll(async()=>{
   mf = new Miniflare(convertV4MiniflareOptions({ modules:true, script:'export default {fetch(){return new Response("ok")}}', d1Databases:['DB'], compatibilityDate:'2026-09-05' }));
   const DB=await mf.getD1Database('DB'); env={ DB:DB as unknown as D1Database, APP_ENV:'test', ASSETS:{} as Fetcher, DEEPSEEK_API_KEY:'test-placeholder-only' };
-  for(const file of ['0001_events.sql','0002_identity.sql']) {
+  for(const file of ['0001_events.sql','0002_identity.sql','0006_mail_digest.sql','0008_outbox_notice_kind.sql']) {
     const sql=readFileSync(new URL(`../migrations/${file}`,import.meta.url),'utf8').replace(/--[^\n]*/g,'');
     for(const statement of sql.split(';').filter(s=>s.trim())) await DB.prepare(statement).run();
   }

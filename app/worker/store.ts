@@ -29,7 +29,7 @@ async function commit(env:Env,old:Activity,e:Activity,notices:Notice[],actor:str
   for(let i=0;i<notices.length;i++){
     const n=notices[i];
     const link=env.APP_URL?`\n\n活动详情：${env.APP_URL}/#event/${e.id}`:'';
-    sql.push(env.DB.prepare('INSERT INTO outbox(id,user_id,subject,body,created_at) SELECT ?,?,?,?,? WHERE EXISTS(SELECT 1 FROM activities WHERE id=? AND commit_id=?)').bind(`${marker}:${i}`,n.userId,n.subject,n.text+link,now,e.id,marker));
+    sql.push(env.DB.prepare('INSERT INTO outbox(id,user_id,subject,body,created_at,kind,priority,deliver_before) SELECT ?,?,?,?,?,?,?,? WHERE EXISTS(SELECT 1 FROM activities WHERE id=? AND commit_id=?)').bind(`${marker}:${i}`,n.userId,n.subject,n.text+link,now,n.kind,n.priority,n.deliverBefore,e.id,marker));
   }
   if(action==='edit'||action==='describe')for(const tag of e.tags||[])sql.push(env.DB.prepare('INSERT OR IGNORE INTO tags(key,label) SELECT ?,? WHERE EXISTS(SELECT 1 FROM activities WHERE id=? AND commit_id=?)').bind(tag.toLowerCase(),tag,e.id,marker));
   const result=await env.DB.batch(sql);return (result[0].meta.changes??0)>0;
