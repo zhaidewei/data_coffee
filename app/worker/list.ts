@@ -2,8 +2,8 @@ import type {Activity,Env,User} from './types';
 import {fail,nextDue} from './engine';
 import {advance,project} from './store';
 import {decodeActivityDocument} from './activity-schema';
-// @ts-expect-error Shared browser calendar logic keeps Amsterdam/DST filtering identical.
-import {matchesTime} from '../web/overview.js';
+// @ts-expect-error Dependency-free JavaScript shared with the browser.
+import {matchesTime} from '../web/shared/time-rules.js';
 
 const positive=(value:string|null,fallback:number)=>{if(value===null)return fallback;if(!/^[1-9]\d*$/.test(value)||!Number.isSafeInteger(Number(value)))fail('分页参数须为正整数');return Number(value);};
 function rangeOf(params:URLSearchParams){
