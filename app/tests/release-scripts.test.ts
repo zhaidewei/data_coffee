@@ -1,6 +1,6 @@
 import {describe,expect,it,vi} from 'vitest';
 // @ts-expect-error Release scripts are dependency-free JavaScript CLIs.
-import {migrationDelta,normalizeBaseUrl,parseD1Rows,parseMigrationDiff,readEventPagination,repoFromRemote,summarizeOutbox,validateGitHubReleaseReady,validateHealth} from '../scripts/release-common.mjs';
+import {ignoredAssetPaths,migrationDelta,normalizeBaseUrl,parseD1Rows,parseMigrationDiff,readEventPagination,repoFromRemote,summarizeOutbox,validateGitHubReleaseReady,validateHealth} from '../scripts/release-common.mjs';
 
 describe('发布脚本安全门禁',()=>{
   it('识别未应用和远端多出的 migration',()=>{
@@ -10,12 +10,21 @@ describe('发布脚本安全门禁',()=>{
     const head='a'.repeat(40),checks={check_runs:[{id:1,name:'App Worker',status:'completed',conclusion:'failure',app:{id:7}},{id:2,name:'App Worker',status:'completed',conclusion:'success',app:{id:7}}]};
     const protection={enforce_admins:{enabled:true},required_pull_request_reviews:{required_approving_review_count:1,bypass_pull_request_allowances:{users:[],teams:[],apps:[]}},required_status_checks:{checks:[{context:'App Worker',app_id:7}]}};
     const pulls=[{number:9,base:{ref:'main'},merged_at:'2026-09-09T00:00:00Z',merge_commit_sha:head}];
-    expect(validateGitHubReleaseReady(protection,checks,pulls,head)).toEqual({adminsEnforced:true,pullRequestReviewsRequired:true,requiredCheck:'App Worker',pullRequest:9,check:{name:'App Worker',status:'completed',conclusion:'success',appId:7}});
-    expect(()=>validateGitHubReleaseReady({...protection,enforce_admins:{enabled:false}},checks,pulls,head)).toThrow('管理员');
-    expect(()=>validateGitHubReleaseReady({...protection,required_pull_request_reviews:{...protection.required_pull_request_reviews,bypass_pull_request_allowances:{users:[{}]}}},checks,pulls,head)).toThrow('bypass');
-    expect(()=>validateGitHubReleaseReady({...protection,required_status_checks:{contexts:['App Worker']}},checks,pulls,head)).toThrow('GitHub App');
-    expect(()=>validateGitHubReleaseReady({...protection,required_status_checks:{checks:[{context:'App Worker',app_id:8}]}},checks,pulls,head)).toThrow('找不到');
-    expect(()=>validateGitHubReleaseReady(protection,checks,[],head)).toThrow('已合并');
+    const workflow={id:42,path:'.github/workflows/ci.yml'};
+    const runs={workflow_runs:[{id:81,workflow_id:42,head_sha:head,status:'completed',conclusion:'success'}]};
+    const jobs={workflowRunId:81,jobs:[{name:'App Worker',head_sha:head,status:'completed',conclusion:'success'}]};
+    expect(validateGitHubReleaseReady(protection,checks,pulls,head,workflow,runs,jobs)).toEqual({adminsEnforced:true,pullRequestReviewsRequired:true,requiredCheck:'App Worker',workflow:{id:42,path:'.github/workflows/ci.yml',runId:81},pullRequest:9,check:{name:'App Worker',status:'completed',conclusion:'success',appId:7}});
+    expect(()=>validateGitHubReleaseReady({...protection,enforce_admins:{enabled:false}},checks,pulls,head,workflow,runs,jobs)).toThrow('管理员');
+    expect(()=>validateGitHubReleaseReady({...protection,required_pull_request_reviews:{...protection.required_pull_request_reviews,bypass_pull_request_allowances:{users:[{}]}}},checks,pulls,head,workflow,runs,jobs)).toThrow('bypass');
+    expect(()=>validateGitHubReleaseReady({...protection,required_status_checks:{contexts:['App Worker']}},checks,pulls,head,workflow,runs,jobs)).toThrow('GitHub App');
+    expect(()=>validateGitHubReleaseReady({...protection,required_status_checks:{checks:[{context:'App Worker',app_id:8}]}},checks,pulls,head,workflow,runs,jobs)).toThrow('找不到');
+    expect(()=>validateGitHubReleaseReady(protection,checks,[],head,workflow,runs,jobs)).toThrow('已合并');
+    expect(()=>validateGitHubReleaseReady(protection,checks,pulls,head,{...workflow,path:'.github/workflows/other.yml'},runs,jobs)).toThrow('路径');
+    expect(()=>validateGitHubReleaseReady(protection,checks,pulls,head,workflow,{workflow_runs:[{...runs.workflow_runs[0],workflow_id:99}]},jobs)).toThrow('workflow run');
+    expect(()=>validateGitHubReleaseReady(protection,checks,pulls,head,workflow,runs,{workflowRunId:82,jobs:jobs.jobs})).toThrow('不属于');
+  });
+  it('枚举静态资源目录中的 ignored 文件',()=>{
+    expect(ignoredAssetPaths('app/web/.DS_Store\napp/web/private.txt\n')).toEqual(['app/web/.DS_Store','app/web/private.txt']);
   });
   it('从 SSH alias 或 HTTPS origin 解析仓库身份',()=>{
     expect(repoFromRemote('git@github-personal:zhaidewei/data_coffee.git')).toBe('zhaidewei/data_coffee');

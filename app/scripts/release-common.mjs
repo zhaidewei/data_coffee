@@ -6,6 +6,7 @@ export const APP_DIR=fileURLToPath(new URL('..',import.meta.url));
 export const REPO_DIR=fileURLToPath(new URL('../..',import.meta.url));
 export const DEFAULT_BASE_URL='https://data-coffee-dev.dewei-zhai.workers.dev';
 export const EXPECTED_REPO='zhaidewei/data_coffee';
+export const RELEASE_WORKFLOW_PATH='.github/workflows/ci.yml';
 
 export class ReleaseError extends Error {}
 
@@ -35,11 +36,17 @@ export function assertCleanAndCurrent(){
     const paths=changes.slice(0,8).map(line=>line.slice(3)).join(', ');
     throw new ReleaseError(`工作树不干净（${paths}${changes.length>8?', …':''}）`);
   }
+  const ignoredAssets=ignoredAssetPaths(capture('git',['ls-files','--others','--ignored','--exclude-standard','--','app/web'],{cwd:REPO_DIR,label:'检查静态资源中的 ignored 文件',trim:false}));
+  if(ignoredAssets.length)throw new ReleaseError(`静态资源目录包含不会出现在 Git SHA 中的 ignored 文件（${ignoredAssets.slice(0,8).join(', ')}${ignoredAssets.length>8?', …':''}）`);
   run('git',['fetch','--quiet','origin','main'],{cwd:REPO_DIR,label:'刷新 origin/main'});
   const head=currentHead();
   const originMain=capture('git',['rev-parse','origin/main'],{cwd:REPO_DIR,label:'读取 origin/main'});
   if(head!==originMain)throw new ReleaseError(`当前 HEAD ${head} 与 origin/main ${originMain} 不一致`);
   return {head,originMain};
+}
+
+export function ignoredAssetPaths(output){
+  return output.split('\n').map(path=>path.trim()).filter(Boolean);
 }
 
 function parseJson(value,label){
@@ -57,7 +64,7 @@ function allowanceCount(allowances){
   return ['users','teams','apps'].reduce((sum,key)=>sum+(Array.isArray(allowances[key])?allowances[key].length:0),0);
 }
 
-export function validateGitHubReleaseReady(protection,checks,pulls,head){
+export function validateGitHubReleaseReady(protection,checks,pulls,head,workflow,runs,jobs){
   if(protection?.enforce_admins?.enabled!==true)throw new ReleaseError('GitHub main 尚未对管理员执行分支保护');
   if(!protection?.required_pull_request_reviews)throw new ReleaseError('GitHub main 尚未要求 pull request review');
   if(allowanceCount(protection.required_pull_request_reviews.bypass_pull_request_allowances)>0)throw new ReleaseError('GitHub main 仍配置了 pull request review bypass allowance');
@@ -68,9 +75,15 @@ export function validateGitHubReleaseReady(protection,checks,pulls,head){
   const latest=candidates.sort((a,b)=>Number(b.id)-Number(a.id))[0];
   if(!latest)throw new ReleaseError(`GitHub 上找不到 ${head} 的 App Worker check`);
   if(latest.status!=='completed'||latest.conclusion!=='success')throw new ReleaseError(`App Worker check 尚未成功（status=${latest.status}, conclusion=${latest.conclusion}）`);
+  if(workflow?.path!==RELEASE_WORKFLOW_PATH)throw new ReleaseError(`发布 workflow 路径不是 ${RELEASE_WORKFLOW_PATH}`);
+  const workflowRun=Array.isArray(runs?.workflow_runs)?runs.workflow_runs.find(run=>run?.workflow_id===workflow.id&&run?.head_sha===head&&run?.status==='completed'&&run?.conclusion==='success'):null;
+  if(!workflowRun)throw new ReleaseError(`${RELEASE_WORKFLOW_PATH} 在 ${head} 上没有成功的 workflow run`);
+  if(jobs?.workflowRunId!==workflowRun.id)throw new ReleaseError('App Worker jobs 不属于已验证的发布 workflow run');
+  const workflowJob=Array.isArray(jobs?.jobs)?jobs.jobs.find(job=>job?.name==='App Worker'&&job?.head_sha===head&&job?.status==='completed'&&job?.conclusion==='success'):null;
+  if(!workflowJob)throw new ReleaseError('已验证的发布 workflow run 中没有成功的 App Worker job');
   const pullRequest=Array.isArray(pulls)?pulls.find(pr=>pr?.base?.ref==='main'&&typeof pr.merged_at==='string'&&pr.merge_commit_sha===head):null;
   if(!pullRequest)throw new ReleaseError(`GitHub 上找不到生成 ${head} 的已合并 main pull request`);
-  return {adminsEnforced:true,pullRequestReviewsRequired:true,requiredCheck:'App Worker',pullRequest:Number(pullRequest.number),check:{name:latest.name,status:latest.status,conclusion:latest.conclusion,appId:latest.app?.id??null}};
+  return {adminsEnforced:true,pullRequestReviewsRequired:true,requiredCheck:'App Worker',workflow:{id:workflow.id,path:workflow.path,runId:workflowRun.id},pullRequest:Number(pullRequest.number),check:{name:latest.name,status:latest.status,conclusion:latest.conclusion,appId:latest.app?.id??null}};
 }
 
 export function assertGitHubReleaseReady(head){
@@ -84,7 +97,12 @@ export function assertGitHubReleaseReady(head){
   const protection=parseJson(capture('gh',['api',`repos/${repo}/branches/main/protection`],{cwd:REPO_DIR,label:'读取 GitHub main 分支保护'}),'GitHub protection API');
   const checks=parseJson(capture('gh',['api',`repos/${repo}/commits/${head}/check-runs`],{cwd:REPO_DIR,label:'读取 GitHub check runs'}),'GitHub checks API');
   const pulls=parseJson(capture('gh',['api',`repos/${repo}/commits/${head}/pulls`],{cwd:REPO_DIR,label:'读取 GitHub commit pull requests'}),'GitHub pulls API');
-  return {repo,...validateGitHubReleaseReady(protection,checks,pulls,head)};
+  const workflow=parseJson(capture('gh',['api',`repos/${repo}/actions/workflows/ci.yml`],{cwd:REPO_DIR,label:'读取发布 workflow'}),'GitHub workflow API');
+  const runs=parseJson(capture('gh',['api',`repos/${repo}/actions/workflows/ci.yml/runs?head_sha=${head}&per_page=20`],{cwd:REPO_DIR,label:'读取发布 workflow runs'}),'GitHub workflow runs API');
+  const successfulRun=Array.isArray(runs?.workflow_runs)?runs.workflow_runs.find(run=>run?.workflow_id===workflow.id&&run?.head_sha===head&&run?.status==='completed'&&run?.conclusion==='success'):null;
+  if(!successfulRun)throw new ReleaseError(`${RELEASE_WORKFLOW_PATH} 在 ${head} 上没有成功的 workflow run`);
+  const jobs=parseJson(capture('gh',['api',`repos/${repo}/actions/runs/${successfulRun.id}/jobs`],{cwd:REPO_DIR,label:'读取发布 workflow jobs'}),'GitHub workflow jobs API');
+  return {repo,...validateGitHubReleaseReady(protection,checks,pulls,head,workflow,runs,{workflowRunId:successfulRun.id,...jobs})};
 }
 
 export function parseD1Rows(output){

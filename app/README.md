@@ -21,7 +21,7 @@ npm run dev
 
 ## 发布与读回
 
-`npm run release:preflight` 要求工作树干净、当前位于 `main`、HEAD 与刷新后的 `origin/main` 完全一致。`origin` 和 `gh repo view` 都必须解析为 canonical `zhaidewei/data_coffee`；GitHub protection 必须对管理员生效、要求 PR review、没有 review bypass，并把 `App Worker` 配为 required check。当前 SHA 还必须来自一个已合并到 `main` 的 PR，且 required GitHub App 对应的最新 check 已成功。随后脚本直接读取远端 D1 migration 记录；有待应用 migration 或远端出现当前代码没有的 migration 时停止。它不应用 migration。
+`npm run release:preflight` 要求工作树干净、当前位于 `main`、HEAD 与刷新后的 `origin/main` 完全一致，且 `app/web` 中不存在 Git 忽略但 Wrangler 仍会上传的文件。`origin` 和 `gh repo view` 都必须解析为 canonical `zhaidewei/data_coffee`；GitHub protection 必须对管理员生效、要求 PR review、没有 review bypass，并把 `App Worker` 配为 required check。当前 SHA 还必须来自一个已合并到 `main` 的 PR；成功 check 必须来自精确绑定的 `.github/workflows/ci.yml` workflow run。随后脚本直接读取远端 D1 migration 记录；有待应用 migration 或远端出现当前代码没有的 migration 时停止。它不应用 migration。
 
 首次启用时，先把 CI workflow 合并到远端，让 GitHub 至少运行一次 `App Worker`，再在 branch protection 中把该 check 设为 required；完成前 preflight 会按设计拒绝发布。发布机需安装并登录 `gh` 与 Wrangler CLI，两者仅使用各自现有凭据，脚本不读取或打印凭据。
 
