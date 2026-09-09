@@ -1,0 +1,45 @@
+import {$,el,badge,btn} from './dom.js';
+import {monthRange,eventSlots} from '../shared/time-rules.js';
+import {localParts} from '../event-models.js';
+import {cityCoffee,defaultCoffee} from '../city-coffee.js';
+import {eventPopularity,eventTags} from './event-widgets.js';
+import {mountMap} from '../map.js';
+
+// 页面状态与跨页面动作由入口注入；导入模块本身不注册事件。
+export function createHome({state,changeOverview,loadOverview,app}) {
+let introDismissed=false;
+try{introDismissed=localStorage.getItem('dc-overview-intro-dismissed')==='1';}catch{}
+function dismissOverviewIntro(){
+ introDismissed=true;
+ try{localStorage.setItem('dc-overview-intro-dismissed','1');}catch{}
+ $('.overview-intro')?.remove();
+ $('.overview-periods button')?.focus({preventScroll:true});
+}
+function hero(){return el('section',{class:'hero'},el('div',{},el('span',{class:'eyebrow'},'GOOD COFFEE. REAL CONNECTIONS.'),el('h1',{},'数据之外，',el('br'),'还有一杯 ',el('em',{},'Coffee.')),el('p',{},'把屏幕里的同行，变成咖啡桌旁的朋友。\n在荷兰，和做数据、做 AI 的人聊一个真实问题。'),el('div',{class:'hero-actions'},el('a',{href:'#gatherings',class:'button dark',onclick:e=>{e.preventDefault();$('#gatherings')?.scrollIntoView({behavior:'smooth'});}},'找到下一场聚会 ↗'),el('span',{class:'muted'},'小规模 · 有话聊 · 一起办'))),el('div',{class:'hero-art','aria-label':'Data Coffee 咖啡杯插画',role:'img'},el('span',{class:'steam','aria-hidden':'true'},'∿ ∿'),el('span',{class:'orbit','aria-hidden':'true'},'✳'),el('div',{class:'cup','aria-hidden':'true'},'dc.'),el('span',{class:'art-note'},'BREW IDEAS, TOGETHER.')));}
+function overviewRange(){return state.period==='all'?null:state.period==='custom'?{from:state.from,to:state.to}:monthRange(state.period);}
+function overviewCalendar(slots){
+ const dates=[...new Set(slots.map(s=>localParts(s.startsAt).slice(0,10)))].sort();
+ const months=[...new Set(dates.map(d=>d.slice(0,7)))];
+ return el('div',{class:'overview-calendars'},months.map(month=>{
+ const [year,m]=month.split('-').map(Number),offset=(new Date(Date.UTC(year,m-1,1)).getUTCDay()+6)%7,days=new Date(Date.UTC(year,m,0)).getUTCDate();
+ const grid=el('div',{class:'mini-calendar-grid','aria-hidden':'true'},['一','二','三','四','五','六','日'].map(d=>el('span',{class:'mini-weekday'},d)));
+ for(let i=0;i<offset;i++)grid.append(el('span'));
+ for(let day=1;day<=days;day++){const key=month+'-'+String(day).padStart(2,'0');grid.append(el('span',{class:dates.includes(key)?'mini-day available':'mini-day'},day));}
+ return el('div',{class:'mini-calendar',role:'img','aria-label':year+'年'+m+'月，活动日期：'+dates.filter(d=>d.startsWith(month)).map(d=>Number(d.slice(-2))+'日').join('、')},el('strong',{},year+' / '+String(m).padStart(2,'0')),grid);
+ }));
+}
+function overviewCardVisual(e,slots){const calendar=overviewCalendar(slots),root=el('div',{class:'overview-card-visual'},calendar);if(calendar.children.length<2){const image=el('img',{class:'city-coffee',crossorigin:'anonymous',src:cityCoffee(e.city)+'?cors=1',alt:'',loading:'lazy'});image.onerror=()=>{if(image.getAttribute('src')!==defaultCoffee)image.src=defaultCoffee;else image.hidden=true;};const info=el('div',{class:'overview-card-info'},el('div',{class:'overview-story'},image,el('p',{class:'overview-description'},e.description)),eventPopularity(e));root.append(info);root.classList.add('single-month');}else root.append(el('div',{class:'overview-card-info'},el('p',{class:'overview-description'},e.description),eventPopularity(e)));return root;}
+function overviewCard(e){const slots=eventSlots(e);return el('a',{class:'overview-event',href:`#event/${e.id}`},el('div',{class:'overview-event-heading'},el('h3',{},e.title),badge(e.status)),el('p',{class:'overview-event-meta'},e.city+' · '+(e.selectedSlotId?'最终时段':slots.length>1?slots.length+' 个候选时段':'活动时间')),eventTags(e),overviewCardVisual(e,slots),el('div',{class:'overview-event-bottom'},el('span',{},`${e.counts?.joined||0} 人报名 · ${e.rules.minPeople} 人起成行`),el('span',{},'查看活动流程 →')));}
+function overviewMap(events){const wrapper=el('div',{class:'overview-map-real'});requestAnimationFrame(()=>{if(wrapper.isConnected)mountMap(wrapper,events,state.city,city=>{state.city=city;changeOverview();});});return wrapper;}
+function renderHome(){state.detailVisible=false;state.pendingEvent=null;const range=overviewRange(),invalid=range&&(!range.from||!range.to||range.from>range.to),filtered=invalid||state.overviewLoading?[]:state.events,facets=state.overview||{cities:[],tags:[],total:0},total=invalid||state.overviewError?0:state.pagination?.total||0;const heading=el('header',{class:'overview-heading'},el('div',{},el('span',{class:'eyebrow'},'DATA COFFEE / 活动总览'),el('h1',{class:'coffee-dags-title'},el('s',{class:'airflow-joke'},'Airflow'),' Data Coffee flow'),el('p',{class:'muted'},'把相聚调度起来 · 按城市和时间找到你的下一次 coffee chat。')),el('span',{class:'overview-total'},(state.overviewLoading?'…':total)+' 场活动'));
+const periods=el('div',{class:'overview-periods','aria-label':'按时间筛选'},[['all','全部时间'],['current','本月'],['next','下月'],['custom','自选日期']].map(([key,label])=>btn(label,()=>{state.period=key;changeOverview();},'filter'+(state.period===key?' active':''))));periods.querySelectorAll('button').forEach((b,i)=>b.setAttribute('aria-pressed',String(['all','current','next','custom'][i]===state.period)));
+const tags=facets.tags.map(t=>t.label);
+const tagFilters=el('div',{class:'overview-tag-filters','aria-label':'按主题标签筛选'},el('span',{class:'muted'},'想聊什么'),['',...tags].map(tag=>el('button',{type:'button',class:'filter'+(state.selectedTag===tag?' active':''),'aria-pressed':String(state.selectedTag===tag),onclick:()=>{state.selectedTag=state.selectedTag===tag?'':tag;changeOverview();}},tag||'全部主题')));
+const controls=el('section',{class:'overview-controls'},periods);if(state.period==='custom'){const from=el('input',{type:'date',value:state.from,'aria-label':'开始日期'}),to=el('input',{type:'date',value:state.to,'aria-label':'结束日期'});from.onchange=()=>{state.from=from.value;changeOverview();};to.onchange=()=>{state.to=to.value;changeOverview();};controls.append(el('div',{class:'overview-dates'},el('label',{},'从 ',from),el('label',{},'至 ',to)),invalid?el('p',{class:'error-box',role:'alert'},'请选择完整日期范围，结束日期须不早于开始日期。'):document.createDocumentFragment());}
+controls.append(tagFilters);
+const cities=['全部',...new Set([...facets.cities.map(e=>e.city).filter(Boolean),...(state.city==='全部'?[]:[state.city])])];const cityButtons=el('div',{class:'overview-cities','aria-label':'按城市筛选'},cities.map(city=>{const count=city==='全部'?facets.total:facets.cities.find(e=>e.city===city)?.count||0;return el('button',{type:'button',class:'overview-city'+(state.city===city?' active':''),'aria-pressed':String(state.city===city),onclick:()=>{state.city=city;changeOverview();}},el('span',{},city),el('span',{class:'city-count'},invalid?0:state.overviewLoading||state.overviewError?'…':count));}));
+const geography=el('section',{class:'overview-geography'},el('h2',{},'城市分布'),overviewMap(invalid||state.overviewLoading||state.overviewError?[]:facets.cities),cityButtons);const results=el('section',{class:'overview-results','aria-label':'筛选结果','aria-live':'polite'},el('div',{class:'overview-results-heading'},el('h2',{},state.city==='全部'?'所有城市':state.city),el('span',{class:'muted'},(state.overviewLoading?'…':total)+' 场')),state.overviewLoading?el('p',{class:'loading',role:'status'},'正在加载活动…'):state.overviewError?el('div',{class:'error-box',role:'alert'},state.overviewError,btn('重试',loadOverview)):filtered.length?filtered.map(overviewCard):el('div',{class:'empty'},el('h3',{},invalid?'先选好日期':'No coffee runs found.'),el('p',{},invalid?'补全日期后即可查看结果。':'这个范围还没有咖啡被调度。试试其他城市或时间，或发起一场。'),btn('重置筛选',()=>{state.city='全部';state.period='all';state.selectedTag='';changeOverview();})));
+if(!invalid&&!state.overviewError&&state.pagination?.totalPages>1){const previous=btn('上一页',()=>{state.page--;loadOverview();}),next=btn('下一页',()=>{state.page++;loadOverview();});previous.disabled=state.overviewLoading||state.page<=1;next.disabled=state.overviewLoading||state.page>=state.pagination.totalPages;results.append(el('nav',{class:'overview-pagination','aria-label':'活动分页'},previous,el('span',{},`第 ${state.page} / ${state.pagination.totalPages} 页`),next));}
+app.replaceChildren(el('div',{id:'gatherings',class:'overview'},heading,introDismissed?null:el('aside',{class:'decision-note overview-intro'},el('button',{type:'button',class:'overview-intro-close','aria-label':'关闭介绍',title:'关闭介绍',onclick:dismissOverviewIntro},'×'),el('strong',{},'想聊就报名，一起把局凑起来 ☕'),el('p',{},'群里的大聚会，刚认识的人还没聊够就散场了？或只是想找几个同频的人，喝杯咖啡，聊聊想法和近况。'),el('p',{},'想约一次 coffee chat，又不想在群里吆喝？这里是给全荷兰华人数据同行准备的低噪声相聚空间。'),el('p',{},'你可以自己攒局，也可以加入感兴趣的一场。推荐场地、搭把手，都欢迎。'),el('p',{},'不用一个人张罗齐所有事情。大家一起凑，条件满足就按约定自动开局。'),el('p',{},'这次没凑成也没关系，下次再约。出发前，记得看看活动的最新安排。')),controls,el('div',{class:'overview-layout'},geography,results)));}
+return {overviewRange,renderHome};
+}
