@@ -43,9 +43,11 @@ const user = { id: 'smoke-user', nickname: '测试成员', publicNickname: true 
                     await page.evaluate(theme => document.documentElement.dataset.theme = theme, theme);
                     if (view === 'home') {
                         assert.equal(await page.locator('.overview-card-cta').innerText(), '查看并报名');
-                        assert.equal(await page.locator('.event-popularity progress').getAttribute('aria-valuetext'), '4 人已报名 · 1 人候补 · 人气 63%');
+                        assert.equal(await page.locator('.event-popularity progress').getAttribute('aria-label'), '活动人气（含报名与候补）');
+                        assert.equal(await page.locator('.event-popularity progress').getAttribute('aria-valuetext'), '4 人已报名 · 1 人候补 · 总人气 5 人 · 上限 8 人');
                         assert.deepEqual(await page.locator('.popularity-track').evaluate(root => ({ max: Number(root.querySelector('progress').max), value: Number(root.querySelector('progress').value), marker: parseFloat(root.querySelector('.quorum-marker').style.left) })), { max: 8, value: 5, marker: 37.5 });
-                        assert.deepEqual(await page.locator('.overview-fact-icon').evaluateAll(nodes=>nodes.map(node=>node.classList.item(1))),['time','place']);
+                        assert.equal(await page.locator('.event-popularity small').innerText(),'人气含报名与候补 · 成行线 3 人 · 上限 8 人');
+                        assert.deepEqual(await page.locator('.overview-fact-icon').evaluateAll(nodes=>nodes.map(node=>({kind:node.classList.item(1),width:getComputedStyle(node).width,before:getComputedStyle(node,'::before').content}))),[{kind:'time',width:'14px',before:'""'},{kind:'place',width:'14px',before:'""'}]);
                     }
                     if (view === 'form') {
                         await page.locator('.city-toggle').click();
