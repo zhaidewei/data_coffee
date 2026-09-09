@@ -3,7 +3,7 @@ const { chromium } = require('playwright');
 const fs = require('node:fs'), http = require('node:http'), path = require('node:path'), assert = require('node:assert/strict');
 const root = path.resolve(process.argv[2] || path.join(__dirname, '../web')), name = 'css-smoke', out = process.env.CSS_SMOKE_OUTPUT || require('node:os').tmpdir() + '/data-coffee-css-smoke';
 fs.mkdirSync(out, { recursive: true });
-const startsAt = Date.parse('2026-09-26T12:00Z'), rules = { startsAt, endsAt: startsAt + 10800000, recruitmentDeadline: startsAt - 86400000, registrationDeadline: startsAt - 3600000, promotionDeadline: startsAt - 3600000, minPeople: 3, maxPeople: 8, minHosts: 0, minTalks: 0, minCohosts: 0, venueRequired: false, waitlist: true, repairMinutes: 60, continuousVenue: true, continuousHosts: true };
+const startsAt = Date.parse('2026-09-26T12:00Z'), rules = { startsAt, endsAt: startsAt + 10800000, timeSlots: [{id:'slot-a',startsAt,endsAt:startsAt+10800000},{id:'slot-b',startsAt:startsAt+7*86400000,endsAt:startsAt+7*86400000+10800000}], recruitmentDeadline: startsAt - 86400000, registrationDeadline: startsAt - 3600000, promotionDeadline: startsAt - 3600000, minPeople: 3, maxPeople: 8, minHosts: 0, minTalks: 0, minCohosts: 0, venueRequired: false, waitlist: true, repairMinutes: 60, continuousVenue: true, continuousHosts: true };
 const event = { id: 'css-smoke', title: '数据同行周末咖啡', description: '一起聊数据、工具与生活。', city: 'Amsterdam', status: 'recruiting', version: 1, rules, tags: ['AI', 'Data'], counts: { joined: 4, waitlisted: 1 }, conditions: [{ key: 'people', label: '人数', required: 3, current: 4, satisfied: true }], repairs: [], participants: [], applications: [], myApplications: [], receipts: [], preferenceSummary: { slots: [], times: [], places: [], transport: [] }, publisher: { nickname: '社区成员' }, myParticipation: null, canManage: false, isOwner: false, createdAt: startsAt - 7 * 86400000 };
 const user = { id: 'smoke-user', nickname: '测试成员', publicNickname: true };
 (async () => {
@@ -43,8 +43,10 @@ const user = { id: 'smoke-user', nickname: '测试成员', publicNickname: true 
                     await page.evaluate(theme => document.documentElement.dataset.theme = theme, theme);
                     if (view === 'home') {
                         assert.equal(await page.locator('.overview-card-cta').innerText(), '查看并报名');
+                        assert.equal(await page.locator('.overview-card-fact').first().locator('dd strong').innerText(),'时间待定');
+                        assert.match(await page.locator('.overview-card-fact').first().locator('dd small').innerText(),/最终选 1 场/);
                         assert.equal(await page.locator('.event-popularity progress').getAttribute('aria-label'), '活动人气（含报名与候补）');
-                        assert.equal(await page.locator('.event-popularity progress').getAttribute('aria-valuetext'), '4 人已报名 · 1 人候补 · 总人气 5 人 · 上限 8 人');
+                        assert.equal(await page.locator('.event-popularity progress').getAttribute('aria-valuetext'), '4 人已报名 · 最终时段需 3 人可参加 · 总人气 5 人 · 上限 8 人');
                         assert.deepEqual(await page.locator('.popularity-track').evaluate(root => ({ max: Number(root.querySelector('progress').max), value: Number(root.querySelector('progress').value), marker: parseFloat(root.querySelector('.quorum-marker').style.left) })), { max: 8, value: 5, marker: 37.5 });
                         assert.equal(await page.locator('.event-popularity small').innerText(),'人气含报名与候补 · 成行线 3 人 · 上限 8 人');
                         assert.deepEqual(await page.locator('.overview-fact-icon').evaluateAll(nodes=>nodes.map(node=>({kind:node.classList.item(1),width:getComputedStyle(node).width,before:getComputedStyle(node,'::before').content}))),[{kind:'time',width:'14px',before:'""'},{kind:'place',width:'14px',before:'""'}]);

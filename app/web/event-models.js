@@ -31,7 +31,7 @@ export function overviewAction(e,now=Date.now()){
  return registrationOpen&&capacityOpen?'查看并报名':'查看活动';
 }
 
-export function overviewTiming(slots=[]){
+export function overviewTiming(slots=[],undecided=false){
  const valid=slots.filter(slot=>Number.isFinite(slot?.startsAt)&&Number.isFinite(slot?.endsAt)).sort((a,b)=>a.startsAt-b.startsAt);
  if(!valid.length)return {dates:'时间待确认',rhythm:''};
  const days=[...new Map(valid.map(slot=>{const local=localParts(slot.startsAt),day=local.slice(0,10);return [day,{day,year:+day.slice(0,4),month:+day.slice(5,7),date:+day.slice(8,10)}];})).values()];
@@ -43,6 +43,7 @@ export function overviewTiming(slots=[]){
  const sameRhythm=signatures.every(signature=>signature===signatures[0]);
  const [weekday,start,end,sameDay]=signatures[0].split('|');
  const rhythm=sameRhythm&&sameDay==='true'?`${weekday} · ${start}–${end}`:`${valid.length} 个候选时段`;
+ if(undecided&&valid.length>1)return {dates:'时间待定',rhythm:`候选：${dates} · 最终选 1 场${sameRhythm&&sameDay==='true'?' · '+rhythm:''}`};
  return {dates,rhythm};
 }
 

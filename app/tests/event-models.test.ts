@@ -26,8 +26,10 @@ describe('活动卡片把决定参与的信息压缩成一份',()=>{
  });
  it('同一节奏的候选日期合并显示，跨节奏时不制造共同时间',()=>{
   const slot=(day:number,hour=13)=>({startsAt:amsterdamMs(`2026-09-${day}T${hour}:00`),endsAt:amsterdamMs(`2026-09-${day}T${hour+2}:30`)});
-  expect(overviewTiming([slot(13),slot(20),slot(27)])).toEqual({dates:'9月13、20、27日',rhythm:'周日 · 13:00–15:30'});
+ expect(overviewTiming([slot(13),slot(20),slot(27)])).toEqual({dates:'9月13、20、27日',rhythm:'周日 · 13:00–15:30'});
+  expect(overviewTiming([slot(13),slot(20),slot(27)],true)).toEqual({dates:'时间待定',rhythm:'候选：9月13、20、27日 · 最终选 1 场 · 周日 · 13:00–15:30'});
   expect(overviewTiming([slot(13),slot(20,14)])).toEqual({dates:'9月13、20日',rhythm:'2 个候选时段'});
+  expect(overviewTiming([slot(13),slot(20,14)],true)).toEqual({dates:'时间待定',rhythm:'候选：9月13、20日 · 最终选 1 场'});
   expect(overviewTiming([{startsAt:amsterdamMs('2026-12-27T13:00'),endsAt:amsterdamMs('2026-12-27T15:30')},{startsAt:amsterdamMs('2027-01-03T13:00'),endsAt:amsterdamMs('2027-01-03T15:30')}]).dates).toBe('2026年12月27日、2027年1月3日');
  });
 });
