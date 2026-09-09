@@ -29,7 +29,7 @@ npm run dev
 
 `/api/health/operations` 返回不含用户与活动内容的实时运维汇总：到期活动数量与最老积压年龄、可领取邮件数量与最老积压年龄，以及终态失败和需人工核对数量。Scheduled invocation 共用 50 条 D1 statement、12 个工作单位的账本；活动结算最多使用 30 条 statement 和 8 个工作单位，固定为邮件保留 20 条 statement 和 4 个工作单位。每轮写一条 `cron_completed` 结构化日志，包含两阶段结果和实际预算消耗。
 
-部署后脚本只读回 canonical production URL，并要求 health 环境为 `production`；`DATA_COFFEE_BASE_URL` 不影响部署。它核对 `/api/health`、读取 `/api/events?page=1&pageSize=1` 验证 pagination 元数据，并通过只读 D1 查询输出 outbox 状态计数及已到期活动数量。活动列表 API 会按现有业务规则先结算到期活动，因此这一步可能推进活动状态和生成通知；单页读取可避免为读回反复扫描。脚本输出不包含活动正文、用户、邮箱、邮件内容或密钥。也可单独执行 `npm run release:readback -- --expected-version <40位Git SHA>`；只有这个独立 readback 接受 `DATA_COFFEE_BASE_URL` 或 `--base-url` 指定另一个不含凭据的 HTTPS 地址。
+部署后脚本只读回 canonical production URL，并要求 health 环境为 `production`；`DATA_COFFEE_BASE_URL` 不影响部署。它核对 `/api/health`、`/api/health/operations`，读取 `/api/events?page=1&pageSize=1` 验证 pagination 元数据，并通过只读 D1 查询输出 outbox 状态计数及已到期活动数量。活动列表 API 只返回已存储快照，不执行结算或写入。脚本输出不包含活动正文、用户、邮箱、邮件内容或密钥。也可单独执行 `npm run release:readback -- --expected-version <40位Git SHA>`；只有这个独立 readback 接受 `DATA_COFFEE_BASE_URL` 或 `--base-url` 指定另一个不含凭据的 HTTPS 地址。
 
 CI 会比较当前提交与 PR base（push 到 `main` 时使用 push 前 SHA）：`app/migrations/` 只允许新增文件，修改、删除或重命名已经存在的 migration 都会失败。首次 push 没有有效 base SHA 时跳过该项。
 
@@ -48,7 +48,7 @@ node cli/dc-flow.mjs events action EVENT_ID publish --version 0 --key publish-un
 
 推荐认证：在网页登录后创建个人访问令牌，通过 `DATA_COFFEE_TOKEN` 或 `--token-stdin` 注入。令牌格式为 `dcf_` 加 64 位小写十六进制字符，CLI 通过 `Authorization: Bearer` 发送。Agent 使用本地 `secret` CLI 在调用点读取，将输出管道接到 `node cli/dc-flow.mjs auth me --token-stdin`；具体读取参数以本机 `secret` 帮助为准。不要将明文令牌放入命令参数、日志或文件。CLI 不保存令牌；两个 token 来源同时提供、或 token 与会话同时提供时拒绝执行。`--token-stdin` 不能与 `--data -` 同用，动作请求体可用 `@文件`。
 
-邮箱登录保留作为备用：`auth request --data ...` 的 JSON 为 `{email}`，该命令会向目标服务请求真实验证码；`auth verify --data -` 接收 `{email,code,nickname}`。普通验证输出只含用户；显式 `--session-only` 输出 `{sessionToken}` 供管道捕获。会话仅经 `DATA_COFFEE_SESSION` 或 `--session-stdin` 注入；后者接收原始 token 或该 JSON。使用本地 `secret` CLI 在调用点读取并通过管道注入，不把会话、验证码写进命令参数、文档或文件。认证请求体优先 stdin，不能同时让会话和请求体占用 stdin。CLI 不保存会话。`auth me` 查询本人；`auth logout` 注销当前会话。
+邮箱登录保留作为备用：`auth request --data ...` 的 JSON 为 `{email}`，该命令会向目标服务请求真实验证码；`auth verify --data -` 接收 `{email,code,nickname}`。普通验证输出只含用户；显式 `--session-only` 输出 `{sessionToken}` 供管道捕获。会话仅经 `DATA_COFFEE_SESSION` 或 `--session-stdin` 注入；后者接收原始 token 或该 JSON。使用本地 `secret` CLI 在调用点读取并通过管道注入，不把会话、验证码写进命令参数、文档或文件。认证请求体优先 stdin，不能同时让会话和请求体占用 stdin。CLI 不保存会话。`auth me` 查询本人，`auth export` 导出本人数据，`auth logout` 注销当前会话；网页账户页也可直接下载同一份 JSON。
 
 成功输出为 stdout JSON；错误为 stderr JSON。退出码：0 成功，1 网络或 API 错误，2 参数错误，3 认证/权限错误，4 版本冲突。请求超时 30 秒，拒绝 HTTP 重定向。活动列表遵循服务端分页及草稿可见性规则；当前不支持删除已发布活动和自动登录刷新。测试通过 mock HTTP 验证参数和错误通道，不发送真实邮件。
 
@@ -62,7 +62,7 @@ node cli/dc-flow.mjs events action EVENT_ID publish --version 0 --key publish-un
 
 ## 维护与故障定位
 
-- 每分钟 Cron 处理最多20个到期活动，再处理最多10封通知；页面读取和写操作也先补做活动结算。页面可见时每30秒检查活动状态。时钟倒计时不代表后台已提交结算。
+- 每分钟 Cron 使用共享预算推进到期活动并发送通知：活动阶段最多使用 30 条 D1 statement 和 8 个工作单位，邮件阶段始终保留 20 条 statement 和 4 个工作单位。活动详情读取和写操作也会先补做该活动结算，首页列表保持只读。页面可见时每30秒检查活动状态。时钟倒计时不代表后台已提交结算。
 - D1 `activities` 为活动状态，`audit` 为操作索引，介绍修订前后正文在活动 receipts 中；`outbox` 为通知状态。邮箱及申请详情属于私有数据，不导出至公共日志。
 - `outbox.sent` 表示服务商已接收。失败原因采用安全代码；网络结果不确定超过25分钟后停止自动重发，由维护者核对 Brevo 接收记录。不要直接清空幂等信息重发。
 - 日额度默认配置280次，并为登录邮件预留余量；700人同时需要通知可能跨日排队，页面状态即时可查。验证码过期为10分钟，会话为30天。
