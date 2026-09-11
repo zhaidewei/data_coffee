@@ -35,6 +35,20 @@ describe('D1事务与公开投影',()=>{
 
 it('100次并发读取只提交一次到期结算与通知',async()=>{let e=await published();for(const id of ['a','b','c'])e=await execute(env,e.id,{action:'join'},user(id),'join-'+id);const before=e.version;const results=await Promise.all(Array.from({length:100},()=>advance(env,e.id,()=>e.rules.recruitmentDeadline)));expect(results.every(r=>r.status==='confirmed'&&r.version===before+1)).toBe(true);const audit=await env.DB.prepare("SELECT count(*) n FROM audit WHERE event_id=? AND action='reconcile'").bind(e.id).first<{n:number}>();expect(audit!.n).toBe(1);const out=await env.DB.prepare("SELECT user_id FROM outbox WHERE subject='活动已成团'").all<{user_id:string}>();expect(out.results.map(r=>r.user_id).sort()).toEqual(['a','b','c','owner']);});
 
+it('候选日期到期只推进到下一个日期并持久化新的调度时间',async()=>{
+ const r=base(),gap=7*86400000;
+ r.timeSlots=[{id:'first',startsAt:r.startsAt,endsAt:r.endsAt},{id:'second',startsAt:r.startsAt+gap,endsAt:r.endsAt+gap},{id:'third',startsAt:r.startsAt+2*gap,endsAt:r.endsAt+2*gap}];
+ let e=await insertActivity(env,{title:'逐期候选',city:'Amstelveen',description:'',rules:r},user('owner'));
+ e=await execute(env,e.id,{action:'publish'},user('owner'),'publish-progressive');const before=e.version;
+ const advanced=await advance(env,e.id,()=>r.recruitmentDeadline);
+ expect(advanced).toMatchObject({status:'recruiting',version:before+1,rules:{recruitmentDeadline:r.recruitmentDeadline+gap,startsAt:r.startsAt+gap}});
+ expect(advanced.rules.timeSlots?.map(slot=>slot.id)).toEqual(['second','third']);
+ const stored=await env.DB.prepare('SELECT next_due FROM activities WHERE id=?').bind(e.id).first<{next_due:number}>();
+ expect(stored?.next_due).toBe(r.recruitmentDeadline+gap);
+ const audit=await env.DB.prepare("SELECT count(*) n FROM audit WHERE event_id=? AND action='reconcile'").bind(e.id).first<{n:number}>();
+ expect(audit?.n).toBe(1);
+});
+
 // Every database below is an isolated Miniflare D1 database.
 describe('删除草稿',()=>{
  const draft=()=>insertActivity(env,{title:'待删除草稿',city:'Amsterdam',rules:base()},user('owner'));
