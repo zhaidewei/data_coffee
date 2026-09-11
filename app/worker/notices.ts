@@ -11,6 +11,7 @@ export const noticePolicies = {
   repair_resolved: {priority: 1},
   registration_not_selected: {priority: 1},
   activity_time_selected: {priority: 1},
+  candidate_time_expired: {priority: 0},
   registration_reply: {priority: 1},
   application_submitted: {priority: 2},
   venue_standby: {priority: 1},
@@ -20,7 +21,7 @@ export const noticePolicies = {
 export type NoticeKind = keyof typeof noticePolicies;
 export type NoticePriority = 0 | 1 | 2;
 export type NoticeSemantics = Pick<Notice, 'kind' | 'priority' | 'deliverBefore'>;
-type DeadlineKind = 'promotion_offer' | 'promotion_deadline_changed' | 'repair_required';
+type DeadlineKind = 'promotion_offer' | 'promotion_deadline_changed' | 'repair_required' | 'candidate_time_expired';
 export function noticeSemantics(kind: DeadlineKind, deliverBefore: number): NoticeSemantics;
 export function noticeSemantics(kind: Exclude<NoticeKind, DeadlineKind>, deliverBefore?: number): NoticeSemantics;
 export function noticeSemantics(kind: NoticeKind, deliverBefore?: number): NoticeSemantics {

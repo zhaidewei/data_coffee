@@ -34,7 +34,8 @@ export function validateRules(input: unknown, now: number): Rules {
       if(!Number.isSafeInteger(slot.startsAt)||!Number.isSafeInteger(slot.endsAt)||slot.startsAt<r.startsAt||slot.endsAt<=slot.startsAt||slot.endsAt-slot.startsAt>7*86400000||slot.startsAt-now>366*86400000)fail('候选时段日期无效');
       ids.add(slot.id);times.add(slot.startsAt);
     }
-    if(!r.timeSlots.some(slot=>slot.startsAt===r.startsAt&&slot.endsAt===r.endsAt))fail('默认时间须为最早候选时段');
+    r.timeSlots=[...r.timeSlots].sort((a,b)=>a.startsAt-b.startsAt||a.id.localeCompare(b.id));
+    if(r.timeSlots[0].startsAt!==r.startsAt||r.timeSlots[0].endsAt!==r.endsAt)fail('默认时间须为最早候选时段');
   }
   return Object.fromEntries([...ints.map(x=>x[0]), 'recruitmentDeadline','startsAt','endsAt','registrationDeadline','promotionDeadline',...(r.registrationLeadHours!==undefined?['registrationLeadHours']:[]),...(r.promotionLeadHours!==undefined?['promotionLeadHours']:[]),'waitlist','venueRequired','allowRoleOverlap','continuousVenue','continuousTalks','continuousCohosts','continuousHosts','addressVisibility',...(r.timeSlots?['timeSlots']:[])].map(k => [k,(r as any)[k]])) as unknown as Rules;
 }
@@ -73,6 +74,29 @@ function recipients(e:Activity) {return [...new Set([e.ownerId,...e.participants
 function announce(e:Activity,out:Notice[],semantics:NoticeSemantics,subject:string,body:string) {for(const userId of recipients(e))out.push({...semantics,userId,subject,text:`${e.title}（${e.city}）\n${body}`});}
 function record(e:Activity,at:number,kind:string,reason:string) {e.receipts.push({at,kind,conditions:conditions(e),reason});}
 function cancel(e:Activity,now:number,reason:string,out:Notice[]) {e.status='cancelled';e.reason=reason;e.repairs=[];record(e,now,'cancelled',reason);announce(e,out,noticeSemantics('activity_cancelled'),'活动已取消',reason);}
+function advanceCandidateDeadlines(e:Activity,now:number,out:Notice[]):void {
+  if(e.selectedSlotId||!e.rules.timeSlots||e.rules.timeSlots.length<2)return;
+  const decisionLead=e.rules.startsAt-e.rules.recruitmentDeadline;
+  const reachesFinalDeadline=now>=e.rules.timeSlots.at(-1)!.startsAt-decisionLead;
+  const expiredParticipants=new Set<string>();
+  while(e.rules.timeSlots.length>1&&now>=e.rules.recruitmentDeadline){
+    const expired=e.rules.timeSlots[0],deadline=e.rules.recruitmentDeadline;
+    const registrationLead=e.rules.startsAt-e.rules.registrationDeadline;
+    const promotionLead=e.rules.startsAt-e.rules.promotionDeadline;
+    const remaining=e.rules.timeSlots.slice(1),next=remaining[0];
+    e.rules.timeSlots=remaining;e.rules.startsAt=next.startsAt;e.rules.endsAt=next.endsAt;
+    e.rules.recruitmentDeadline=next.startsAt-decisionLead;
+    e.rules.registrationDeadline=e.rules.registrationLeadHours===undefined?next.startsAt-registrationLead:next.startsAt-e.rules.registrationLeadHours*3600000;
+    e.rules.promotionDeadline=e.rules.promotionLeadHours===undefined?next.startsAt-promotionLead:next.startsAt-e.rules.promotionLeadHours*3600000;
+    if(!reachesFinalDeadline)for(const participant of e.participants.filter(p=>p.status!=='left')){
+      participant.availableSlotIds=participant.availableSlotIds?.filter(id=>id!==expired.id);
+      if(participant.availableSlotIds?.length)continue;
+      participant.status='left';delete participant.promotionOfferUntil;delete participant.promotionOfferExpired;expiredParticipants.add(participant.userId);
+    }
+    record(e,deadline,'candidate_time_expired',`候选时段 ${new Date(expired.startsAt).toISOString()} 未在期限前确认${reachesFinalDeadline?'':`，继续征集剩余 ${remaining.length} 个候选时段`}`);
+  }
+  for(const userId of expiredParticipants)out.push({userId,...noticeSemantics('candidate_time_expired',e.rules.recruitmentDeadline),subject:'你选择的候选日期已过确认期限',text:`「${e.title}」仍在征集其他候选日期。你原先选择的日期未被确认，如仍想参加，请在下个候选确认期限前重新报名并选择剩余日期。`});
+}
 function promote(e:Activity,now:number,out:Notice[]) {
   if (!e.rules.waitlist || now>=e.rules.promotionDeadline || now>=e.rules.startsAt) return;
   let free=e.rules.maxPeople-joined(e).length-e.participants.filter(p=>p.status==='waitlisted'&&(p.promotionOfferUntil||0)>now).length;
@@ -89,6 +113,7 @@ export function reconcile(e:Activity,now:number,out:Notice[]):void {
   e.repairs=e.repairs.filter(r=>!['talks','cohosts','roles'].includes(r.key));
   if(e.status==='draft'||e.status==='cancelled'||e.status==='completed')return;
   for(const p of e.participants)if(p.status==='waitlisted'&&p.promotionOfferUntil!==undefined&&p.promotionOfferUntil<=now)p.promotionOfferExpired=true;
+  if(e.status==='recruiting')advanceCandidateDeadlines(e,now,out);
   if(e.status==='recruiting' && now>=e.rules.recruitmentDeadline) {
     const missing=conditions(e).filter(c=>!c.satisfied);
     if(missing.length){cancel(e,e.rules.recruitmentDeadline,`征集截止条件不足：${missing.map(c=>`${c.label} ${c.current}/${c.required}`).join('、')}`,out);return;}
@@ -145,11 +170,15 @@ export function applyCommand(e:Activity,cmd:Command,userId:string,now:number,out
     case 'publish': owner(e,userId);if(e.status!=='draft')fail('活动已经发布',409);e.rules=validateRules(e.rules,now);e.status='recruiting';e.publishedAt=now;record(e,now,'published','征集已发布，规则锁定');break;
     case 'select_time': {
       owner(e,userId);
-      if(e.status!=='recruiting'||now>=e.rules.recruitmentDeadline||e.selectedSlotId)fail('只能在征集截止前确认一次最终时间',409);
+      if(e.status!=='recruiting'||now>=e.rules.recruitmentDeadline||e.selectedSlotId)fail('只能在当前候选确认期限前确认一次最终时间',409);
       const slot=e.rules.timeSlots?.find(s=>s.id===cmd.slotId);if(!slot)fail('候选时段不存在');
+      const decisionLead=e.rules.startsAt-e.rules.recruitmentDeadline;
+      const registrationLead=e.rules.startsAt-e.rules.registrationDeadline;
+      const promotionLead=e.rules.startsAt-e.rules.promotionDeadline;
       e.selectedSlotId=slot.id;e.rules.startsAt=slot.startsAt;e.rules.endsAt=slot.endsAt;
-      if(e.rules.registrationLeadHours!==undefined)e.rules.registrationDeadline=slot.startsAt-e.rules.registrationLeadHours*3600000;
-      if(e.rules.promotionLeadHours!==undefined)e.rules.promotionDeadline=slot.startsAt-e.rules.promotionLeadHours*3600000;
+      e.rules.recruitmentDeadline=slot.startsAt-decisionLead;
+      e.rules.registrationDeadline=e.rules.registrationLeadHours===undefined?slot.startsAt-registrationLead:slot.startsAt-e.rules.registrationLeadHours*3600000;
+      e.rules.promotionDeadline=e.rules.promotionLeadHours===undefined?slot.startsAt-promotionLead:slot.startsAt-e.rules.promotionLeadHours*3600000;
       let seats=e.rules.maxPeople;
       for(const p of e.participants.filter(p=>p.status!=='left').sort((a,b)=>a.order-b.order)){
         const canAttend=p.availableSlotIds?.includes(slot.id);
