@@ -17,6 +17,7 @@ export const noticePolicies = {
   venue_standby: {priority: 1},
   application_reviewed: {priority: 1},
   application_withdrawn: {priority: 1},
+  organizer_message: {priority: 1},
 } as const;
 export type NoticeKind = keyof typeof noticePolicies;
 export type NoticePriority = 0 | 1 | 2;

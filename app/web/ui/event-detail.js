@@ -6,6 +6,7 @@ import {tagPicker} from './tag-picker.js';
 import {dagStatuses} from '../dag-status.js';
 import {shareEvent} from './sharing.js';
 import {api} from './api.js';
+import {effectiveSlot,lifecycle,registrationLabel} from '../event-models.js';
 
 // 页面状态与跨页面动作由入口注入；导入模块本身不注册事件。
 export function createEventDetail({command,requireUser,state,renderEventForm,app}) {
@@ -15,12 +16,11 @@ function confirmVenue(a){const f=el('form',{},el('h2',{},'确认场地 · '+a.ti
 function applicationNode(a,e,reviewControls=true,ownControls=true){const own=(e.myApplications||[]).some(x=>x.id===a.id);const mutable=!['cancelled','completed'].includes(e.status)&&Date.now()<e.rules.startsAt;const canReview=reviewControls&&mutable&&(['cohost','venue','host'].includes(a.kind)?e.isOwner:e.canManage);return el('div',{class:'application'},el('h3',{},`${kinds[a.kind]||a.kind} · ${a.title} `,badge(a.status)),el('p',{},a.detail),a.capacity?el('p',{},`容量：${a.capacity} 人`):a.kind==='venue'?el('p',{class:'muted'},'容量待确认'):null,a.address?el('p',{},`地址：${a.address}`):null,a.duration?el('p',{},`分享时长：${a.duration} 分钟`):null,a.amount?el('p',{},`赞助：€${a.amount}`):null,a.reason?el('p',{},`处理说明：${a.reason}`):null,el('div',{class:'inline-actions'},ownControls&&mutable&&own&&['pending','approved'].includes(a.status)?btn('撤回 / 退出',()=>confirmation('撤回这项申请？','撤回已通过的申请可能影响成行条件。','withdraw',{applicationId:a.id}),'button quiet'):null,canReview&&a.status==='pending'?btn('通过',()=>a.kind==='venue'?confirmVenue(a):confirmation('通过申请？',`批准「${a.title}」，系统将重新检查成行条件。`,'review',{applicationId:a.id,approved:true})):null,canReview&&a.status==='pending'?btn('拒绝',()=>confirmation('拒绝申请','请向申请人说明原因。','review',{applicationId:a.id,approved:false},true),'button quiet'):null,mutable&&e.isOwner&&a.kind==='cohost'&&a.status==='approved'?btn('撤销协办资格',()=>confirmation('撤销批准','撤销后系统将重新检查活动条件。','revoke',{applicationId:a.id},true),'button danger'):null));}
 function decisionSummary(e,openParticipants){
  if(e.status==='draft')return null;
- const titles={recruiting:'正在征集 · 尚未成行',confirmed:'已成行',repairing:'等待补齐',cancelled:'活动已取消',completed:'活动已结束'};
- const slots=e.rules.timeSlots||[],fixed=slots.find(s=>s.id===e.selectedSlotId)||(!slots.length?e.rules:null);
+ const phase=lifecycle(e),slots=e.rules.timeSlots||[],fixed=effectiveSlot(e)||(!slots.length?e.rules:null);
  const venues=(e.applications||[]).filter(a=>a.kind==='venue'&&a.status==='approved'),hosts=(e.conditions||[]).find(c=>c.key==='hosts'&&c.required>0),terminal=['completed','cancelled'].includes(e.status);
  const item=(name,value)=>el('div',{},el('dt',{},name),el('dd',{},value));
  const time=fixed?date(fixed.startsAt)+' — '+date(fixed.endsAt):el('div',{},el('div',{class:'decision-slot-list'},slots.slice(0,3).map(s=>el('span',{},date(s.startsAt)+'–'+date(s.endsAt,{hour:'2-digit',minute:'2-digit',month:undefined,day:undefined})))),slots.length>3?el('small',{},'另有 '+(slots.length-3)+' 个候选时段'):null,el('small',{},'候选时间，最终确认其中一场'));
- const root=el('section',{class:'event-decision decision-'+e.status,'aria-label':'当前活动决策'},el('h2',{},titles[e.status]||statusNames[e.status]),eventTags(e),el('dl',{class:'decision-facts'},item(fixed?'已确认时间':'候选时间',time),item('地点',venues.length?venues.map(v=>v.title+(v.address?' · '+v.address:'')).join('、'):e.city+' · 具体场地待确认'),item('人数',el('div',{},el('span',{},(e.counts?.joined||0)+' 人报名'+(e.counts?.waitlisted?' · '+e.counts.waitlisted+' 人候补':'')+' · '+e.rules.minPeople+'–'+e.rules.maxPeople+' 人'),btn('查看报名与留言',openParticipants,'button participant-entry'))),hosts?item('帮忙成员','已确认 '+hosts.current+' / '+hosts.required+' 人'):null));
+ const root=el('section',{class:'event-decision decision-'+e.status,'aria-label':'当前活动决策'},el('h2',{},phase.label),el('p',{class:'decision-phase-detail'},phase.detail+' · '+registrationLabel(e)),eventTags(e),el('dl',{class:'decision-facts'},item(fixed?'已确认时间':'候选时间',time),item('地点',venues.length?venues.map(v=>v.title+(v.address?' · '+v.address:'')).join('、'):e.city+' · 具体场地待确认'),item('人数',el('div',{},el('span',{},(e.counts?.joined||0)+' 人报名'+(e.counts?.waitlisted?' · '+e.counts.waitlisted+' 人候补':'')+' · '+e.rules.minPeople+'–'+e.rules.maxPeople+' 人'),btn('查看报名与留言',openParticipants,'button participant-entry'))),hosts?item('帮忙成员','已确认 '+hosts.current+' / '+hosts.required+' 人'):null));
  if(terminal)root.append(el('p',{},e.status==='cancelled'?(e.reason||'本场活动已取消。'):'以上为活动结束时的安排。'));
  else if(e.status==='confirmed')root.append(el('p',{class:'decision-deadline'},'已满足成行条件，请按确认的时间和地点参加。'));
  else {const deadline=e.status==='repairing'&&e.repairs?.length?Math.min(...e.repairs.map(r=>r.deadline)):e.rules.recruitmentDeadline;const pendingCandidates=e.status==='recruiting'&&!e.selectedSlotId&&slots.length>1;root.append(el('p',{class:'decision-deadline'},(e.status==='repairing'?'补齐截止 · ':pendingCandidates?'下个候选确认期限 · ':'成行决定 · ')+date(deadline)));}
@@ -62,7 +62,7 @@ function renderDetail(e){
   const repair=(e.repairs||[]).find(r=>r.key==='people'),full=(e.counts?.joined||0)>=e.rules.maxPeople;
   const registrationOpen=active&&beforeStart&&((p?.promotionOfferUntil||0)>Date.now()||Date.now()<e.rules.registrationDeadline||!!repair);
   const waitOpen=e.rules.waitlist&&Date.now()<e.rules.promotionDeadline;
-  const slots=e.rules.timeSlots||[], selectedSlot=slots.find(s=>s.id===e.selectedSlotId);
+  const slots=e.rules.timeSlots||[], selectedSlot=effectiveSlot(e);
   const prefForm=el('form',{class:'preference-form'},el('p',{class:'form-note'},`活动城市：${e.city}`));
   if((p?.promotionOfferUntil||0)>Date.now())prefForm.append(el('p',{class:'form-note'},'有名额为你保留，请在 '+date(p.promotionOfferUntil)+' 前确认参加。'));
   if(slots.length)prefForm.append(registrationCalendar(slots,p?.availableSlotIds||[],e.selectedSlotId));
@@ -77,6 +77,15 @@ function renderDetail(e){
   prefForm.onsubmit=async ev=>{ev.preventDefault();prefSubmit.disabled=true;try{const availableSlotIds=new FormData(prefForm).getAll('availableSlotIds');if(slots.length&&!availableSlotIds.length)throw new Error('请至少选择一个可以参加的时段。');if(selectedSlot&&!availableSlotIds.includes(selectedSlot.id))throw new Error('报名需要能够参加已确认的最终时段。');await command('join',{availableSlotIds,transportPreferences:new FormData(prefForm).getAll('transportPreferences'),registrationMessage:prefForm.elements.registrationMessage.value});}catch(err){errorAt(prefForm,err);}finally{prefSubmit.disabled=false;}};
   const prefSummary=e.preferenceSummary||{times:[],places:[]};
   const replyRegistration=person=>{const form=el('form',{},el('h2',{},'回复报名留言'),el('p',{class:'registration-message'},person.registrationMessage),field('发起人回复','reply','textarea',person.registrationReply||''),el('button',{class:'button dark',type:'submit'},person.registrationReply?'更新回复':'发布回复'));form.elements.reply.maxLength=500;form.onsubmit=async ev=>{ev.preventDefault();const submit=form.querySelector('[type=submit]');submit.disabled=true;try{await command('reply_registration',{participantId:person.participantId,reply:form.elements.reply.value});}catch(error){errorAt(form,error);}finally{submit.disabled=false;}};modal(form);};
+  const composeOrganizerMail=()=>{
+    const usage=e.organizerMail||{used:0,limit:5},available=Math.max(0,usage.limit-usage.used);
+    const f=el('form',{class:'organizer-mail-form'},el('h2',{},'邮件联系参与者'),el('p',{class:'muted'},`本场还可发送 ${available} 次；每次可选择部分或全部参与者。系统会记录发送操作。`));
+    const selection=el('fieldset',{},el('legend',{},'收件人'),people.map(person=>el('label',{class:'check'},el('input',{type:'checkbox',name:'participantIds',value:person.participantId,checked:true}),`${person.nickname} · ${person.email||''}`)));
+    const subject=field('主题','subject','text'),message=field('正文','message','textarea');subject.querySelector('input').maxLength=100;message.querySelector('textarea').maxLength=4000;
+    const submit=el('button',{type:'submit',class:'button dark',disabled:available===0},available?'排队发送':'已达到本场上限');f.append(selection,subject,message,submit);
+    f.onsubmit=async event=>{event.preventDefault();submit.disabled=true;try{const participantIds=new FormData(f).getAll('participantIds');if(!participantIds.length)throw new Error('请至少选择一位参与者。');const result=await api(`/api/events/${encodeURIComponent(e.id)}/mail`,{participantIds,subject:f.elements.subject.value,message:f.elements.message.value});toast(`已为 ${result.sent} 位参与者排队发送`);e.organizerMail={used:result.used,limit:result.limit};closeModal();}catch(error){errorAt(f,error);submit.disabled=available===0;}};
+    modal(f);
+  };
   const renderParticipantList=()=>people.length
     ?el('div',{class:'participant-list'},people.map(person=>{
       const conversation=person.registrationMessage
@@ -85,7 +94,7 @@ function renderDetail(e){
           person.registrationReply?el('p',{class:'registration-reply'},el('strong',{},'发起人回复：'),person.registrationReply):null,
           e.isOwner&&active&&person.participantId?btn(person.registrationReply?'修改回复':'回复留言',()=>replyRegistration(person),'button quiet'):null)
         :el('p',{class:'muted'},'没有填写报名留言。');
-      return el('article',{class:'person'},el('strong',{},`${person.nickname||'匿名参与者'}${person.isMe?'（我）':''} · ${statusNames[person.status]||person.status}`),conversation);
+      return el('article',{class:'person'},el('strong',{},`${person.nickname||'匿名参与者'}${person.isMe?'（我）':''} · ${statusNames[person.status]||person.status}`),e.isOwner&&person.email?el('a',{href:`mailto:${person.email}`,class:'participant-email'},person.email):null,conversation);
     }))
     :el('p',{class:'muted'},'还没有人报名。');
   const joinDetail=el('div',{class:'registration-detail'},el('div',{class:'registration-actions'},el('p',{class:'muted'},`最低 ${e.rules.minPeople} 人，最多 ${e.rules.maxPeople} 人；报名截止：${deadlineLabel(e,'registration')}`),
@@ -98,7 +107,7 @@ function renderDetail(e){
     timeDetail.append(el('p',{class:'muted'},selectedSlot?'最终时段已确认。':'请在下个候选确认期限前选定一场；未选定时只移除到期日期，后面的候选日期继续征集。'),...slots.map(s=>el('div',{class:'slot-result'},el('span',{},`${date(s.startsAt)} — ${date(s.endsAt)} · ${(prefSummary.slots||[]).find(x=>x.id===s.id)?.count||0} 人可参加`),s.id===e.selectedSlotId?el('strong',{},'已确认'):canSelectTime?btn('确认此时段',()=>confirmation('确认最终时段',`${date(s.startsAt)} — ${date(s.endsAt)}。确认后不可修改。`,'select_time',{slotId:s.id}),'button quiet'):null)));
   }
   timeDetail.append(
-    el('section',{id:'detail-participants'},el('h3',{},'报名成员与留言'),renderParticipantList()),
+    el('section',{id:'detail-participants'},el('div',{class:'participant-heading'},el('h3',{},'报名成员与留言'),e.isOwner&&people.length?btn(`邮件联系 · ${e.organizerMail?.used||0}/${e.organizerMail?.limit||5}`,composeOrganizerMail,'button quiet'):null),renderParticipantList()),
     el('div',{class:'preference-summary'},slots.length?summaryChart('可参加时段人数（可多选）',slots.map(slot=>({id:slot.id,label:date(slot.startsAt)+' — '+date(slot.endsAt),count:(prefSummary.slots||[]).find(x=>x.id===slot.id)?.count||0}))):null,summaryChart('交通汇总（可多选）',prefSummary.transport)));
   const peopleCondition=conditions.find(c=>c.key==='people');
   const venueCondition=conditions.find(c=>c.key==='venue');
@@ -190,7 +199,8 @@ function renderDetail(e){
   if(registrationButton.disabled)registrationButton.textContent='报名已关闭';
   const selected=nodes.find(box=>state.dagSelection?.eventId===e.id&&box.dataset.flowKey===state.dagSelection.stage);selected?._dagButton.setAttribute('aria-pressed','true');
 
-  app.replaceChildren(el('a',{class:'back',href:'#'},'← 所有聚会'),el('header',{class:'detail-header code-header'},el('span',{class:'eyebrow'},'COFFEE DAG / GRAPH'),el('h1',{},e.title),el('p',{class:'muted publisher'},'发布人：'+(e.publisher?.nickname||'匿名成员')),decisionSummary(e,()=>modal(el('section',{},el('h2',{},'报名成员与留言'),renderParticipantList()))),el('div',{class:'detail-primary-actions'},badge(e.status),e.status!=='draft'?registrationButton:null,e.status!=='draft'?btn('分享活动',()=>shareEvent(e),'button share-cta'):null)),draft?el('div',{class:'draft-toolbar'},el('span',{},'草稿预览 · 仅你可见'),btn('返回编辑',()=>renderEventForm(e)),btn('发布活动',()=>publishPreview(e),'button dark'),btn('删除草稿',()=>deleteDraftDialog(e),'button danger')):document.createDocumentFragment(),el('div',{class:'dag-workspace dag-modal-workspace'},el('section',{class:'dag-graph'},el('div',{class:'dag-toolbar'},'点击节点，查看详情或办理事项 · 连线表示活动流程'),canvas,el('p',{class:'muted'},'报名 / 提议 → 发起人确认 → READY · 截止后按规则成行或取消'))));
+  const phase=lifecycle(e);
+  app.replaceChildren(el('a',{class:'back',href:'#'},'← 所有聚会'),el('header',{class:'detail-header code-header'},el('span',{class:'eyebrow'},'COFFEE DAG / GRAPH'),el('h1',{},e.title),el('p',{class:'muted publisher'},'发布人：'+(e.publisher?.nickname||'匿名成员')),decisionSummary(e,()=>modal(el('section',{},el('div',{class:'participant-heading'},el('h2',{},'报名成员与留言'),e.isOwner&&people.length?btn('邮件联系参与者',composeOrganizerMail,'button quiet'):null),renderParticipantList()))),el('div',{class:'detail-primary-actions'},el('span',{class:`badge ${phase.key}`},phase.label),e.status!=='draft'?registrationButton:null,e.status!=='draft'?btn('分享活动',()=>shareEvent(e),'button share-cta'):null)),draft?el('div',{class:'draft-toolbar'},el('span',{},'草稿预览 · 仅你可见'),btn('返回编辑',()=>renderEventForm(e)),btn('发布活动',()=>publishPreview(e),'button dark'),btn('删除草稿',()=>deleteDraftDialog(e),'button danger')):document.createDocumentFragment(),el('div',{class:'dag-workspace dag-modal-workspace'},el('section',{class:'dag-graph'},el('div',{class:'dag-toolbar'},'点击节点，查看详情或办理事项 · 连线表示活动流程'),canvas,el('p',{class:'muted'},'报名 / 提议 → 发起人确认 → READY · 截止后按规则成行或取消'))));
 }
 function deleteDraftDialog(e){
  const content=el('div',{},el('h2',{},'删除草稿？'),el('p',{},'将删除「'+e.title+'」。删除后无法在页面恢复。'),btn('保留草稿',closeModal),btn('确认删除',async()=>{try{await api('/api/events/'+e.id,{version:e.version},'DELETE');closeModal();state.event=null;location.hash='';toast('草稿已删除');}catch(err){errorAt(content,err);}},'button danger'));modal(content);

@@ -1,6 +1,6 @@
 import {describe,it,expect} from 'vitest';
 // @ts-ignore shared browser model
-import {localParts,amsterdamMs,weekendCoffeeTemplate,popularity,participationSummary,overviewAction,overviewTiming} from '../web/event-models.js';
+import {localParts,amsterdamMs,weekendCoffeeTemplate,popularity,participationSummary,overviewAction,overviewTiming,lifecycle,registrationLabel} from '../web/event-models.js';
 // @ts-ignore browser city catalog
 import {cityCatalog,cityCoordinates,canonicalCity} from '../web/city-catalog.js';
 // @ts-ignore browser city picker
@@ -15,6 +15,14 @@ describe('人气按报名和候补计算',()=>{
  it('旧投影没有counts时按0显示',()=>expect(popularity({rules:{maxPeople:8}}).people).toBe(0));
 });
 describe('活动卡片把决定参与的信息压缩成一份',()=>{
+ it('生命周期和报名状态各自只表达一件事',()=>{
+  const rules={startsAt:5000,endsAt:6000,registrationDeadline:4500,promotionDeadline:4800,minPeople:4,maxPeople:8,waitlist:true,timeSlots:[{id:'only',startsAt:5000,endsAt:6000}]};
+  expect(lifecycle({status:'recruiting',selectedSlotId:'only',counts:{joined:2},conditions:[{satisfied:false}],rules},1000).label).toBe('方案锁定');
+  expect(lifecycle({status:'recruiting',selectedSlotId:'only',counts:{joined:6},conditions:[{satisfied:true}],rules},1000)).toMatchObject({label:'筹备就绪',detail:'活动已确定，仍可报名'});
+  expect(registrationLabel({status:'recruiting',counts:{joined:2},rules},1000)).toBe('开放报名');
+  expect(registrationLabel({status:'recruiting',counts:{joined:6},rules},1000)).toBe('已成行 · 尚有名额');
+  expect(lifecycle({status:'confirmed',counts:{joined:6},conditions:[{satisfied:true}],rules},5500).label).toBe('进行中');
+ });
  it('最终时间未定时不从总报名数推断成行差额',()=>{
   expect(participationSummary({counts:{joined:2,waitlisted:0},rules:{minPeople:4,maxPeople:8,timeSlots:[{}]}})).toMatchObject({headline:'2 人已报名 · 最终时段需 4 人可参加',needed:null,limit:'最多 8 人'});
   expect(participationSummary({selectedSlotId:'final',counts:{joined:2,waitlisted:0},rules:{minPeople:4,maxPeople:8,timeSlots:[{}]}}).headline).toBe('2 人已报名 · 还差 2 人成行');

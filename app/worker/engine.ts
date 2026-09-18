@@ -57,6 +57,7 @@ export function normalizeTags(input:unknown):string[]{
 }
 export const joined = (e: Activity) => e.participants.filter(p=>p.status==='joined');
 export const isManager = (e: Activity, userId: string) => userId===e.ownerId;
+export const effectiveSlotId=(e:Activity)=>e.selectedSlotId??(e.rules.timeSlots?.length===1&&!e.receipts.some(receipt=>receipt.kind==='candidate_time_expired')?e.rules.timeSlots[0].id:undefined);
 export function conditions(e: Activity): Condition[] {
   const approved = e.applications.filter(a=>a.status==='approved');
   const cohosts = new Set(approved.filter(a=>a.kind==='cohost').map(a=>a.userId));
@@ -64,8 +65,9 @@ export function conditions(e: Activity): Condition[] {
   const r=e.rules;
   const result: Condition[] = [];
   const add=(key:string,label:string,current:number,required:number,continuous:boolean)=>{if(required>0)result.push({key,label,current,required,satisfied:current>=required,continuous});};
-  add('people','参与人数',r.timeSlots&&!e.selectedSlotId?0:joined(e).filter(p=>!e.selectedSlotId||p.availableSlotIds?.includes(e.selectedSlotId)).length,r.minPeople,true);
-  if(r.timeSlots)add('time','最终时间已确认',e.selectedSlotId?1:0,1,false);
+  const slotId=effectiveSlotId(e);
+  add('people','参与人数',r.timeSlots&&!slotId?0:joined(e).filter(p=>!slotId||p.availableSlotIds?.includes(slotId)).length,r.minPeople,true);
+  if(r.timeSlots)add('time','最终时间已确认',slotId?1:0,1,false);
   add('venue','已确认场地容量',Math.max(0,...approved.filter(a=>a.kind==='venue').map(a=>a.capacity??0)),r.venueRequired?r.maxPeople:0,r.continuousVenue);
   add('hosts','已确认现场负责人',hosts.size,r.minHosts,r.continuousHosts);
   return result;
@@ -167,7 +169,11 @@ export function applyCommand(e:Activity,cmd:Command,userId:string,now:number,out
       e.receipts.push({at:now,kind:'description',conditions:conditions(e),reason:'介绍文字已更正，成团规则保持不变',descriptionChange:{before,after}});
       break;
     }
-    case 'publish': owner(e,userId);if(e.status!=='draft')fail('活动已经发布',409);e.rules=validateRules(e.rules,now);e.status='recruiting';e.publishedAt=now;record(e,now,'published','征集已发布，规则锁定');break;
+    case 'publish': {
+      owner(e,userId);if(e.status!=='draft')fail('活动已经发布',409);e.rules=validateRules(e.rules,now);
+      if(e.rules.timeSlots?.length===1)e.selectedSlotId=e.rules.timeSlots[0].id;
+      e.status='recruiting';e.publishedAt=now;record(e,now,'published',e.selectedSlotId?'活动已发布，唯一时段自动锁定':'征集已发布，规则锁定');break;
+    }
     case 'select_time': {
       owner(e,userId);
       if(e.status!=='recruiting'||now>=e.rules.recruitmentDeadline||e.selectedSlotId)fail('只能在当前候选确认期限前确认一次最终时间',409);
@@ -222,7 +228,7 @@ export function applyCommand(e:Activity,cmd:Command,userId:string,now:number,out
       p=e.participants.find(p=>p.userId===userId);
       if(p?.status==='waitlisted'&&(p.promotionOfferUntil||0)>now){p.status='joined';delete p.promotionOfferUntil;savePreferences(p);break;}
       if(p?.status==='joined'){savePreferences(p);break;}
-      const full=!(e.rules.timeSlots&&!e.selectedSlotId)&&joined(e).length+e.participants.filter(x=>x.status==='waitlisted'&&(x.promotionOfferUntil||0)>now).length>=e.rules.maxPeople;
+      const full=!(e.rules.timeSlots&&!effectiveSlotId(e))&&joined(e).length+e.participants.filter(x=>x.status==='waitlisted'&&(x.promotionOfferUntil||0)>now).length>=e.rules.maxPeople;
       if(full&&(!e.rules.waitlist||now>=e.rules.promotionDeadline))fail('名额已满，候补已关闭',409);
       if(p?.status==='waitlisted'&&full){savePreferences(p);break;}
       const status=full?'waitlisted':'joined';

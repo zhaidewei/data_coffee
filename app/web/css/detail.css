@@ -45,3 +45,5 @@
   .event-decision h2 { font-size: 22px; }
   .decision-facts { grid-template-columns: 1fr; }
 }
+
+.decision-phase-detail{margin:-.45rem 0 1rem;color:var(--muted);font-size:.9rem}.participant-heading{display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap}.participant-heading h2,.participant-heading h3{margin:0}.participant-email{display:block;color:var(--blue,#1769c2);overflow-wrap:anywhere;margin:.25rem 0}.organizer-mail-form fieldset{max-height:15rem;overflow:auto}.badge.ready,.badge.running{color:#effff7;background:#087b50}.badge.locked{color:#234e78;background:#dcecff}.badge.preparing{color:#77551a;background:#fff0c9}

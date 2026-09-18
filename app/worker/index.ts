@@ -1,6 +1,6 @@
 import type {Env,User} from './types';
 import {DomainError,fail,textValue} from './engine';
-import {advance,deleteDraft,execute,insertActivity,project,tick} from './store';
+import {advance,deleteDraft,execute,insertActivity,project,sendOrganizerMail,tick} from './store';
 import {currentUser,handleAuth,handleTokens} from './auth';
 import {drainMail} from './mail';
 import {handleAI} from './ai';
@@ -52,7 +52,7 @@ export default {
           const b=await body(request);
           const e=await insertActivity(context,b,user!);res=json({event:await project(context,e,user)},201);
         }else{
-          const m=url.pathname.match(/^\/api\/events\/([a-zA-Z0-9-]+)(\/actions)?$/);
+          const m=url.pathname.match(/^\/api\/events\/([a-zA-Z0-9-]+)(\/actions|\/mail)?$/);
           if(!m)fail('接口不存在',404);
           if(!m[2]&&request.method==='GET'){const e=await advance(context,m[1]);res=json({event:await project(context,e,user)});}
           else if(!m[2]&&request.method==='DELETE'){
@@ -61,7 +61,12 @@ export default {
             if(typeof b.version!=='number')fail('缺少有效活动版本，请刷新',409);
             await deleteDraft(context,m[1],user!,b.version as number);res=json({deleted:true,id:m[1]});
           }
-          else if(m[2]&&request.method==='POST'){
+          else if(m[2]==='/mail'&&request.method==='POST'){
+            if(!user)fail('请先验证邮箱登录',401);
+            const b=await body(request);const key=request.headers.get('Idempotency-Key')??'';
+            res=json(await sendOrganizerMail(context,m[1],user!,b,key));
+          }
+          else if(m[2]==='/actions'&&request.method==='POST'){
             if(!user)fail('请先验证邮箱登录',401);
             const b=await body(request);const action=textValue(b.action,'操作',30);
             if(!Number.isInteger(b.version))fail('缺少活动版本，请刷新',409);
