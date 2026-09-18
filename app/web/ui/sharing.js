@@ -1,7 +1,7 @@
 import {cityCoffee,defaultCoffee} from '../city-coffee.js';
-import {statusNames} from './labels.js';
 import qrcode from '../vendor/qrcode/qrcode.mjs';
 import {activityUrl} from './display.js';
+import {effectiveSlot,lifecycle} from '../event-models.js';
 import {el,modal,btn,toast,$,errorAt} from './dom.js';
 import {copyPng,sharePng} from '../image-sharing.js';
 
@@ -16,7 +16,7 @@ function shareFlavors(e){
 async function shareCard(e){
   const canvas=document.createElement('canvas'),ctx=canvas.getContext('2d'),logo=await loadImage('/logo.svg');
   const coffee=await loadImage(cityCoffee(e.city)).catch(()=>loadImage(defaultCoffee)).catch(()=>null);
-  const slots=e.rules.timeSlots||[],selected=slots.find(s=>s.id===e.selectedSlotId),flavors=shareFlavors(e);
+  const slots=e.rules.timeSlots||[],selected=effectiveSlot(e),flavors=shareFlavors(e),phase=lifecycle(e);
   const fmt=(ms,options)=>new Intl.DateTimeFormat('zh-CN',{timeZone:'Europe/Amsterdam',...options}).format(new Date(ms));
   const days=[...new Set(slots.map(s=>fmt(s.startsAt,{year:'numeric',month:'numeric',day:'numeric'})))];
   const groups=new Map();
@@ -46,7 +46,7 @@ async function shareCard(e){
     if(flavors.length){label('本 场 风 味',215,y,11,'#708078');y+=25;label(flavors.join(' · '),215,y,16,'#496652',500);y+=28;}
     else y+=10;
     rule();y+=28;
-    for(const [x,name,value,width] of [[99,'城市',e.city,108],[229,'成行人数',e.rules.minPeople+' 人起 · 上限 '+e.rules.maxPeople+' 人',146],[351,'活动状态',statusNames[e.status]||e.status,70]]){
+    for(const [x,name,value,width] of [[99,'城市',e.city,108],[229,'成行人数',e.rules.minPeople+' 人起 · 上限 '+e.rules.maxPeople+' 人',146],[351,'活动状态',phase.label,70]]){
       label(name,x,y,12,'#637386');
       const lines=wrap(value,14,width,500);
       lines.forEach((line,i)=>label(line,x,y+26+i*19,14,name==='活动状态'&&e.status==='recruiting'?'#078048':'#24364b',500));

@@ -13,6 +13,25 @@ export function popularity(e){
  return {people,capacity,percent,heat,label,scale,text};
 }
 
+export function effectiveSlot(e){return e.rules?.timeSlots?.find(slot=>slot.id===e.selectedSlotId)??(e.rules?.timeSlots?.length===1?e.rules.timeSlots[0]:null);}
+export function lifecycle(e,now=Date.now()){
+ if(e.status==='draft')return {key:'draft',label:'草稿',detail:'仅发起人可见'};
+ if(e.status==='cancelled')return {key:'cancelled',label:'已取消',detail:'活动不再进行'};
+ if(e.status==='completed'||now>=e.rules.endsAt)return {key:'completed',label:'已结束',detail:'活动已经结束'};
+ if(now>=e.rules.startsAt)return {key:'running',label:'进行中',detail:'活动正在进行'};
+ const ready=(e.conditions||[]).length>0&&(e.conditions||[]).every(condition=>condition.satisfied);
+ if(ready)return {key:'ready',label:'筹备就绪',detail:(e.counts?.joined||0)<e.rules.maxPeople?'活动已确定，仍可报名':'活动已确定'};
+ if(effectiveSlot(e))return {key:'locked',label:'方案锁定',detail:'时间已定，其他条件仍在筹备'};
+ return {key:'preparing',label:'筹备中',detail:'正在确认时间与成行条件'};
+}
+export function registrationLabel(e,now=Date.now()){
+ const closed=['completed','cancelled'].includes(e.status)||now>=e.rules.registrationDeadline||now>=e.rules.startsAt;
+ if(closed)return '报名已关闭';
+ const people=(e.counts?.joined||0)+(e.counts?.waitlisted||0);
+ if(people>=e.rules.maxPeople)return e.rules.waitlist&&now<e.rules.promotionDeadline?'开放候补':'已满员';
+ return (e.counts?.joined||0)>=e.rules.minPeople?'已成行 · 尚有名额':'开放报名';
+}
+
 export function participationSummary(e){
  const joined=e.counts?.joined||0,waitlisted=e.counts?.waitlisted||0,minimum=e.rules.minPeople,maximum=e.rules.maxPeople;
  if(e.rules.timeSlots?.length&&!e.selectedSlotId)return {joined,waitlisted,minimum,maximum,needed:null,headline:`${joined} 人已报名 · 最终时段需 ${minimum} 人可参加`,limit:`最多 ${maximum} 人`};

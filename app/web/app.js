@@ -25,7 +25,7 @@ $('#modal').addEventListener('click',e=>{if(e.target===$('#modal')){const r=e.ta
 $('#create-button').onclick=()=>{if(requireUser())location.hash='new';};
 async function command(action,extra={}){if(!requireUser())return;const id=state.event.id;const r=await api(`/api/events/${id}/actions`,{action,version:state.event.version,...extra});closeModal();toast('操作已保存');if(state.event?.id===id)await loadEvent(id);return r;}
 function run(action,extra={},node){return command(action,extra).catch(e=>node?errorAt(node,e):toast(e.message));}
-async function loadEvent(id){const token=++state.loading;try{const r=await api(`/api/events/${encodeURIComponent(id)}`);if(token!==state.loading)return;const e=r.event;for(const k of ['canManage','isOwner','myParticipation','myApplications','conditions','counts','participants','applications','receipts','preferenceSummary'])if(r[k]!==undefined)e[k]=r[k];if(state.event?.id===e.id&&state.event.version!==e.version)invalidateAIProposal();state.event=e;renderDetail(e);}catch(err){if(token!==state.loading)return;app.replaceChildren(el('a',{class:'back',href:'#'},'← 返回聚会列表'));errorAt(app,err);app.append(btn('重试',()=>loadEvent(id)));}}
+async function loadEvent(id){const token=++state.loading;try{const r=await api(`/api/events/${encodeURIComponent(id)}`);if(token!==state.loading)return;const e=r.event;for(const k of ['canManage','isOwner','myParticipation','myApplications','conditions','counts','participants','applications','receipts','preferenceSummary','organizerMail'])if(r[k]!==undefined)e[k]=r[k];if(state.event?.id===e.id&&state.event.version!==e.version)invalidateAIProposal();state.event=e;renderDetail(e);}catch(err){if(token!==state.loading)return;app.replaceChildren(el('a',{class:'back',href:'#'},'← 返回聚会列表'));errorAt(app,err);app.append(btn('重试',()=>loadEvent(id)));}}
 function changeOverview(){state.page=1;return loadOverview();}
 async function loadOverview(){
  const token=++state.loading,range=overviewRange();state.overviewError=null;
@@ -69,7 +69,7 @@ async function pollDetail(){
     const result=await api('/api/events/'+encodeURIComponent(id));
     if(token!==state.loading||!state.detailVisible||state.event?.id!==id||location.hash!=='#event/'+id)return;
     const next=result.event;
-    for(const k of ['canManage','isOwner','myParticipation','myApplications','conditions','counts','participants','applications','receipts','preferenceSummary'])if(result[k]!==undefined)next[k]=result[k];
+    for(const k of ['canManage','isOwner','myParticipation','myApplications','conditions','counts','participants','applications','receipts','preferenceSummary','organizerMail'])if(result[k]!==undefined)next[k]=result[k];
     if(next.version!==state.event.version||eventTimePhase(next)!==state.renderedPhase){state.pendingEvent=next;if(next.version!==state.event.version)invalidateAIProposal();applyPendingEvent();}
     $('#refresh-error')?.remove();
   }catch(error){

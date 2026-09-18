@@ -11,7 +11,7 @@ let mf:Miniflare,env:Env;
 beforeAll(async()=>{
   mf=new Miniflare(convertV4MiniflareOptions({name:'cron-budget',modules:true,script:'export default {fetch(){return new Response("test")}}',compatibilityDate:'2026-09-05',d1Databases:{DB:'cron-budget-test'}}));
   const DB=await mf.getD1Database('DB') as unknown as D1Database;
-  for(const file of ['0001_events.sql','0002_identity.sql','0006_mail_digest.sql','0008_outbox_notice_kind.sql'])for(const sql of (await readFile(new URL(`../migrations/${file}`,import.meta.url),'utf8')).replace(/--[^\n]*/g,'').split(';').map(s=>s.trim()).filter(Boolean))await DB.prepare(sql).run();
+  for(const file of ['0001_events.sql','0002_identity.sql','0006_mail_digest.sql','0008_outbox_notice_kind.sql','0009_organizer_mail.sql'])for(const sql of (await readFile(new URL(`../migrations/${file}`,import.meta.url),'utf8')).replace(/--[^\n]*/g,'').split(';').map(s=>s.trim()).filter(Boolean))await DB.prepare(sql).run();
   env={DB,ASSETS:{} as Fetcher,APP_ENV:'test',BREVO_API_KEY:'fake',EMAIL_FROM:'sender@example.com'};
 });
 afterAll(async()=>{await mf?.dispose();});

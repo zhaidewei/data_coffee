@@ -14,7 +14,7 @@ const rules:Rules={minPeople:3,maxPeople:8,waitlist:true,recruitmentDeadline:now
 beforeAll(async()=>{
   mf=new Miniflare(convertV4MiniflareOptions({name:'self-export',modules:true,script:'export default {fetch(){return new Response("test")}}',compatibilityDate:'2026-09-05',d1Databases:{DB:'self-export-test'}}));
   const DB=await mf.getD1Database('DB') as unknown as D1Database;
-  for(const file of ['0001_events.sql','0002_identity.sql','0003_personal_tokens.sql','0006_mail_digest.sql','0008_outbox_notice_kind.sql'])for(const sql of (await readFile(new URL(`../migrations/${file}`,import.meta.url),'utf8')).replace(/--[^\n]*/g,'').split(';').map(s=>s.trim()).filter(Boolean))await DB.prepare(sql).run();
+  for(const file of ['0001_events.sql','0002_identity.sql','0003_personal_tokens.sql','0006_mail_digest.sql','0008_outbox_notice_kind.sql','0009_organizer_mail.sql'])for(const sql of (await readFile(new URL(`../migrations/${file}`,import.meta.url),'utf8')).replace(/--[^\n]*/g,'').split(';').map(s=>s.trim()).filter(Boolean))await DB.prepare(sql).run();
   env={DB,ASSETS:{} as Fetcher,APP_ENV:'test'};
 });
 afterAll(async()=>{await mf?.dispose();});
