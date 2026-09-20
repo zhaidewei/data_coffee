@@ -9,6 +9,7 @@ import {listEvents} from './list';
 import {exportUserData} from './self-export';
 import {CronBudget} from './cron-budget';
 import {operations} from './operations';
+import {deleteMessage,listMessages,postMessage} from './messages';
 export {body} from './http';
 
 const json=(data:unknown,status=200)=>Response.json(data,{status});
@@ -52,6 +53,14 @@ export default {
           const b=await body(request);
           const e=await insertActivity(context,b,user!);res=json({event:await project(context,e,user)},201);
         }else{
+          const messagePath=url.pathname.match(/^\/api\/events\/([a-zA-Z0-9-]+)\/messages(?:\/([a-f0-9-]{36}))?$/);
+          if(messagePath){
+            if(!user)fail('请先登录后查看成员交流',401);
+            if(request.method==='GET'&&!messagePath[2])res=json(await listMessages(context,messagePath[1],user,url.searchParams.get('before')));
+            else if(request.method==='POST'&&!messagePath[2])res=json(await postMessage(context,messagePath[1],user,await body(request),request.headers.get('Idempotency-Key')??''),201);
+            else if(request.method==='DELETE'&&messagePath[2])res=json(await deleteMessage(context,messagePath[1],messagePath[2],user));
+            else fail('请求方法不支持',405);
+          }else{
           const m=url.pathname.match(/^\/api\/events\/([a-zA-Z0-9-]+)(\/actions|\/mail)?$/);
           if(!m)fail('接口不存在',404);
           if(!m[2]&&request.method==='GET'){const e=await advance(context,m[1]);res=json({event:await project(context,e,user)});}
@@ -72,6 +81,7 @@ export default {
             if(!Number.isInteger(b.version))fail('缺少活动版本，请刷新',409);
             const e=await execute(context,m[1],{...b,action},user!,request.headers.get('Idempotency-Key')??'',Number(b.version));res=json({event:await project(context,e,user)});
           }else fail('请求方法不支持',405);
+          }
         }
       }
       }

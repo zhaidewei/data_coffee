@@ -43,7 +43,8 @@ const statements=[
   ...users.map(([id,email,nickname,publicNickname])=>`INSERT INTO users(id,email,nickname,public_nickname) VALUES(${quote(id)},${quote(email)},${quote(nickname)},${publicNickname}) ON CONFLICT(id) DO UPDATE SET email=excluded.email,nickname=excluded.nickname,public_nickname=excluded.public_nickname`),
   ...events.map(event=>`INSERT INTO activities(id,version,document,commit_id,next_due,created_at) VALUES(${quote(event.id)},${event.version},${quote(JSON.stringify(event))},${quote(`seed-${event.id}`)},NULL,${event.createdAt}) ON CONFLICT(id) DO UPDATE SET version=excluded.version,document=excluded.document,commit_id=excluded.commit_id,next_due=NULL,created_at=excluded.created_at`),
 ].join(';');
-const result=spawnSync('npx',['wrangler','d1','execute','DB','--local','--command',statements],{stdio:'inherit',shell:false});
+const persistTo=process.env.DATA_COFFEE_LOCAL_PERSIST_TO;
+const result=spawnSync('npx',['wrangler','d1','execute','DB','--local',...(persistTo?['--persist-to',persistTo]:[]),'--command',statements],{stdio:'inherit',shell:false});
 if(result.status!==0)process.exit(result.status??1);
 console.log('\n本地样例已创建：alice、bob、chen、dana @data-coffee.local');
 console.log('在登录框输入任一邮箱，开发验证码会直接显示。');
