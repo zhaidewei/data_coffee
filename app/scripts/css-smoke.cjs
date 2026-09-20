@@ -112,6 +112,43 @@ const user = { id: 'smoke-user', nickname: '测试成员', publicNickname: true 
                     assert.deepEqual(errors, []);
                     await context.close();
                 }
+        // A registration submitted before sign-in must resume with the same
+        // choices after verification, without asking the member to fill it twice.
+        {
+            const context = await browser.newContext({ viewport: { width: 900, height: 900 } });
+            const page = await context.newPage();
+            let currentUser = null, completeJoin;
+            const joined = new Promise(resolve => { completeJoin = resolve; });
+            await page.addInitScript(() => { const Original = Date; window.Date = class extends Original {
+                constructor(...args) { super(...(args.length ? args : ['2026-09-09T12:00Z'])); }
+                static now() { return new Original('2026-09-09T12:00Z').getTime(); }
+            }; });
+            await page.route('**/*', async route => {
+                const request = route.request(), u = new URL(request.url());
+                if (u.origin !== url) return route.abort();
+                if (u.pathname === '/api/me') return route.fulfill({ json: { user: currentUser } });
+                if (u.pathname === '/api/events/css-smoke/actions') { completeJoin(JSON.parse(request.postData())); return route.fulfill({ json: { event } }); }
+                if (u.pathname === '/api/auth/request') return route.fulfill({ json: { developmentCode: '123456' } });
+                if (u.pathname === '/api/auth/verify') { currentUser = user; return route.fulfill({ json: { user } }); }
+                if (u.pathname === '/api/events/css-smoke') return route.fulfill({ json: { event } });
+                if (u.pathname.startsWith('/api/')) return route.fulfill({ json: { events: [event], user: currentUser, pagination: { page: 1, pageSize: 12, total: 1, totalPages: 1, nextPage: null }, overview: { total: 1, cities: [], tags: [], allCities: [] } } });
+                return route.continue();
+            });
+            await page.goto(url + '/#event/css-smoke');
+            await page.getByRole('button', { name: '选时间报名点击这里' }).click();
+            const dialog = page.locator('dialog[open]');
+            await dialog.locator('input[name="availableSlotIds"][value="slot-a"]').check();
+            await dialog.locator('input[name="availableSlotIds"][value="slot-b"]').check();
+            await dialog.locator('input[name="transportPreferences"][value="car"]').check();
+            await dialog.locator('textarea[name="registrationMessage"]').fill('登录前填写的报名留言');
+            await dialog.getByRole('button', { name: '报名并保存偏好' }).click();
+            await dialog.locator('input[name="email"]').fill('member@example.invalid');
+            await dialog.getByRole('button', { name: '发送验证码' }).click();
+            await dialog.locator('input[name="code"]').fill('123456');
+            await dialog.getByRole('button', { name: '验证并登录' }).click();
+            assert.deepEqual(await joined, { action: 'join', version: 1, availableSlotIds: ['slot-a', 'slot-b'], transportPreferences: ['car'], registrationMessage: '登录前填写的报名留言' });
+            await context.close();
+        }
         if (process.env.CSS_SMOKE_BASELINE) {
             const baseline = JSON.parse(fs.readFileSync(process.env.CSS_SMOKE_BASELINE, 'utf8'));
             assert.deepEqual(Object.keys(results), Object.keys(baseline));
