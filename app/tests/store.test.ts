@@ -40,6 +40,27 @@ describe('D1事务与公开投影',()=>{
   await expect(sendOrganizerMail(env,e.id,user('owner'),{participantIds:['a'],subject:'第六封',message:'超限'},'mail-6')).rejects.toMatchObject({status:429});
   const rows=await env.DB.prepare("SELECT user_id,kind FROM outbox WHERE kind='organizer_message'").all();expect(rows.results).toHaveLength(9);
  });
+ it('已报名成员可并发投票并改选候选场地，发起人确认后关闭投票',async()=>{
+  let e=await published();
+  for(const id of ['a','b'])e=await execute(env,e.id,{action:'join'},user(id),`vote-join-${id}`);
+  e=await execute(env,e.id,{action:'apply',kind:'venue',title:'咖啡馆 A',detail:'候选一',address:'街道 1'},user('owner'),'venue-a');
+  const first=e.applications.at(-1)!;
+  e=await execute(env,e.id,{action:'apply',kind:'venue',title:'咖啡馆 B',detail:'候选二',address:'街道 2'},user('owner'),'venue-b');
+  const second=e.applications.at(-1)!;
+  expect((await project(env,e,null)).applications).toHaveLength(0);
+  expect((await project(env,e,user('a'))).applications).toHaveLength(2);
+  const version=e.version;
+  await Promise.all([execute(env,e.id,{action:'venue_vote',applicationId:first.id},user('a'),'vote-a',version),execute(env,e.id,{action:'venue_vote',applicationId:first.id},user('b'),'vote-b',version)]);
+  e=await load(env,e.id);
+  expect((await project(env,e,user('a'))).applications).toEqual(expect.arrayContaining([expect.objectContaining({id:first.id,voteCount:2,myVote:true})]));
+  e=await execute(env,e.id,{action:'venue_vote',applicationId:second.id},user('a'),'vote-switch');
+  expect(e.participants.find(p=>p.userId==='a')?.venueVoteId).toBe(second.id);
+  await expect(execute(env,e.id,{action:'venue_vote',applicationId:first.id},user('outsider'),'vote-outsider')).rejects.toMatchObject({status:403});
+  e=await execute(env,e.id,{action:'review',applicationId:first.id,approved:true,capacity:3},user('owner'),'venue-confirm');
+  await expect(execute(env,e.id,{action:'venue_vote',applicationId:second.id},user('a'),'vote-after-confirm')).rejects.toThrow('场地投票已结束');
+  e=await execute(env,e.id,{action:'leave'},user('a'),'vote-leave');
+  expect(e.participants.find(p=>p.userId==='a')?.venueVoteId).toBeUndefined();
+ });
  it('草稿隔离且他人不可查看',async()=>{const e=await published();const draft=await insertActivity(env,{title:'草稿',city:'Rotterdam',description:'',rules:base()},user('another'));await execute(env,e.id,{action:'join'},user('a'),'join');expect((await load(env,draft.id)).participants).toHaveLength(0);await expect(project(env,draft,user('a'))).rejects.toThrow();});
  it('偏好只按汇总公开并向本人回读',async()=>{let e=await published();e=await execute(env,e.id,{action:'join',timePreference:'周六下午',placePreference:'Amsterdam'},user('a'),'pref-a');e=await execute(env,e.id,{action:'join',timePreference:'周六下午',placePreference:'Utrecht'},user('b'),'pref-b');const anon=await project(env,e,null);expect(anon.preferenceSummary).toMatchObject({times:[{label:'周六下午',count:2}],places:[{label:'Amsterdam',count:1},{label:'Utrecht',count:1}]});expect(JSON.stringify(anon.participants)).not.toContain('周六下午');const mine=await project(env,e,user('a'));expect(mine.myParticipation).toMatchObject({timePreference:'周六下午',placePreference:'Amsterdam'});});
 });

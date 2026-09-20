@@ -35,7 +35,7 @@ function validParticipant(value:unknown):boolean {
   if(!record(value))return false;
   return string(value.userId)&&oneOf(value.status,['joined','waitlisted','left'])&&integer(value.appliedAt)&&integer(value.order)&&
     optional(value.availableSlotIds,item=>list(item,string))&&optional(value.timePreference,string)&&
-    optional(value.placePreference,string)&&optional(value.transportPreferences,item=>list(item,string))&&
+    optional(value.placePreference,string)&&optional(value.venueVoteId,string)&&optional(value.transportPreferences,item=>list(item,string))&&
     optional(value.registrationMessage,string)&&optional(value.promotionOfferUntil,integer)&&
     optional(value.promotionOfferExpired,boolean)&&optional(value.registrationReply,string)&&optional(value.registrationRepliedAt,integer)&&optional(value.registrationRepliedBy,string);
 }

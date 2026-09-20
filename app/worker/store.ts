@@ -59,12 +59,15 @@ async function advanceOnce(env:Env,id:string,clock:()=>number):Promise<Activity>
   }
   return fail('活动正在更新，请稍后刷新',409);
 }
-async function canReplayJoin(env:Env,old:Activity,cmd:Command,user:User,version:number):Promise<boolean>{
-  // Only a first registration can ignore unrelated first-party activity versions.
-  // Audit history proves that no newer personal intent or management decision is
-  // being overwritten, including a time selection before the first load.
-  if(cmd.action!=='join'||!Number.isSafeInteger(version)||version<0||version>=old.version||old.participants.some(p=>p.userId===user.id))return false;
-  const history=await env.DB.prepare("SELECT count(*) AS total, sum(CASE WHEN action='join' AND actor_id<>? THEN 1 ELSE 0 END) AS safe FROM audit WHERE event_id=? AND version>? AND version<=?").bind(user.id,old.id,version,old.version).first<{total:number;safe:number}>();
+async function canReplayIndependentAction(env:Env,old:Activity,cmd:Command,user:User,version:number):Promise<boolean>{
+  // First registrations and votes by different members commute. Audit history
+  // must contain only that same action by other actors before replaying.
+  if(!Number.isSafeInteger(version)||version<0||version>=old.version)return false;
+  const firstJoin=cmd.action==='join'&&!old.participants.some(p=>p.userId===user.id);
+  const independentVote=cmd.action==='venue_vote'&&old.participants.some(p=>p.userId===user.id&&p.status==='joined');
+  if(!firstJoin&&!independentVote)return false;
+  const action=firstJoin?'join':'venue_vote';
+  const history=await env.DB.prepare('SELECT count(*) AS total, sum(CASE WHEN action=? AND actor_id<>? THEN 1 ELSE 0 END) AS safe FROM audit WHERE event_id=? AND version>? AND version<=?').bind(action,user.id,old.id,version,old.version).first<{total:number;safe:number}>();
   return history?.total===old.version-version&&history.safe===history.total;
 }
 export async function execute(env:Env,id:string,cmd:Command,user:User,key:string,version?:number,clock=Date.now,options:{strictVersion?:boolean}={}):Promise<Activity>{
@@ -77,7 +80,7 @@ export async function execute(env:Env,id:string,cmd:Command,user:User,key:string
     if(retry)await new Promise(resolve=>setTimeout(resolve,Math.floor((0.5+Math.random())*Math.min(2000,100*2**(retry-1)))));
     const old=await advance(env,id,clock);
     if(old.processed.some(p=>p.key===key&&p.userId===user.id))return old;
-    if(version!==undefined&&version!==old.version&&(options.strictVersion||!await canReplayJoin(env,old,cmd,user,version)))fail('活动状态已变化，请刷新后重新确认',409);
+    if(version!==undefined&&version!==old.version&&(options.strictVersion||!await canReplayIndependentAction(env,old,cmd,user,version)))fail('活动状态已变化，请刷新后重新确认',409);
     const now=clock();
     // Time can cross while loading or retrying: settle again before mutation.
     if(nextDue(old)!==null&&nextDue(old)!<=now)continue;
@@ -139,15 +142,17 @@ export async function project(env:Env,e:Activity,user:User|null,summary=false):P
   const names=new Map<string,{nickname:string;public_nickname:number;email:string}>();
   // D1 variable limit is 100; keep batches below it.
   for(let i=0;i<ids.length;i+=80){const batch=ids.slice(i,i+80);const res=await env.DB.prepare(`SELECT id,nickname,public_nickname,email FROM users WHERE id IN (${batch.map(()=>'?').join(',')})`).bind(...batch).all<{id:string;nickname:string;public_nickname:number;email:string}>();for(const n of res.results)names.set(n.id,n);}
-  base.participants=e.participants.filter(p=>p.status!=='left').map(p=>{const n=names.get(p.userId);return {participantId:manager?p.userId:undefined,nickname:n&&(n.public_nickname||manager||user?.id===p.userId)?n.nickname:'匿名成员',email:e.ownerId===user?.id?n?.email:undefined,registrationMessage:p.registrationMessage,registrationReply:p.registrationReply,registrationRepliedAt:p.registrationRepliedAt,status:p.status,isMe:user?.id===p.userId};});
+  base.participants=e.participants.filter(p=>p.status!=='left').map(p=>{const n=names.get(p.userId);return {participantId:manager?p.userId:undefined,nickname:n&&(n.public_nickname||manager||user?.id===p.userId)?n.nickname:'匿名成员',email:e.ownerId===user?.id?n?.email:undefined,appliedAt:p.appliedAt,registrationMessage:p.registrationMessage,registrationReply:p.registrationReply,registrationRepliedAt:p.registrationRepliedAt,status:p.status,isMe:user?.id===p.userId};});
   if(e.ownerId===user?.id){const usage=await env.DB.prepare('SELECT count(*) AS used FROM organizer_mail_campaigns WHERE event_id=?').bind(e.id).first<{used:number}>();base.organizerMail={used:Number(usage?.used??0),limit:ORGANIZER_MAIL_LIMIT};}
-  base.myParticipation=mine?{status:mine.status,promotionOfferUntil:mine.promotionOfferUntil,availableSlotIds:mine.availableSlotIds||[],appliedAt:mine.appliedAt,timePreference:mine.timePreference,placePreference:mine.placePreference,transportPreferences:mine.transportPreferences||[],registrationMessage:mine.registrationMessage||'',position:mine.status==='waitlisted'?e.participants.filter(p=>p.status==='waitlisted'&&p.order<=mine.order).length:undefined}:null;
-  const visible=(a:Activity['applications'][number])=>manager||a.userId===user?.id||(['venue','talk','material','pledge'].includes(a.kind)&&a.status==='approved');
+  base.myParticipation=mine?{status:mine.status,promotionOfferUntil:mine.promotionOfferUntil,availableSlotIds:mine.availableSlotIds||[],appliedAt:mine.appliedAt,timePreference:mine.timePreference,placePreference:mine.placePreference,transportPreferences:mine.transportPreferences||[],registrationMessage:mine.registrationMessage||'',venueVoteId:mine.venueVoteId,position:mine.status==='waitlisted'?e.participants.filter(p=>p.status==='waitlisted'&&p.order<=mine.order).length:undefined}:null;
+  const canVoteVenue=mine?.status==='joined';
+  const visible=(a:Activity['applications'][number])=>manager||a.userId===user?.id||(a.kind==='venue'&&canVoteVenue&&a.status==='pending')||(['venue','talk','material','pledge'].includes(a.kind)&&a.status==='approved');
   const appProjection=(a:Activity['applications'][number])=>{
     const own=a.userId===user?.id;
-    if(manager||own)return {...a,isMine:own};
+    const vote=a.kind==='venue'?{voteCount:e.participants.filter(p=>p.status==='joined'&&p.venueVoteId===a.id).length,myVote:mine?.status==='joined'&&mine.venueVoteId===a.id}:{};
+    if(manager||own)return {...a,...vote,isMine:own};
     // Proposal notes may contain private contacts: never expose them publicly.
-    return {id:a.id,kind:a.kind,title:a.title,status:a.status,capacity:a.capacity,duration:a.duration,amount:a.amount,address:addressAllowed?a.address:undefined};
+    return {id:a.id,kind:a.kind,title:a.title,status:a.status,capacity:a.capacity,duration:a.duration,amount:a.amount,address:addressAllowed?a.address:undefined,...(canVoteVenue?vote:{})};
   };
   base.applications=e.applications.filter(visible).map(appProjection);
   base.myApplications=e.applications.filter(a=>a.userId===user?.id).map(appProjection);

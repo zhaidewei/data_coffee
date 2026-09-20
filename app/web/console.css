@@ -6,3 +6,8 @@
 @import url("./css/detail.css");
 @import url("./css/overview.css");
 @import url("./css/account.css");
+
+/* 本场成员交流 */
+.member-discussion{min-width:0}.member-messages{display:grid;gap:10px;max-height:45vh;overflow:auto;margin:18px 0;padding-right:4px}.member-message{padding:12px 14px;border:1px solid var(--line);border-radius:10px;background:var(--white)}.member-message-meta{display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:12px}.member-message-meta time{color:var(--muted)}.member-message-meta .button{margin-left:auto;padding:3px 8px}.member-message p{white-space:pre-wrap;overflow-wrap:anywhere;margin:8px 0 0}.member-message-form{margin-top:16px;border-top:1px solid var(--line);padding-top:16px}.member-message-form[hidden]{display:none}
+.member-discussion [hidden]{display:none!important}
+.registration-note-section{margin-top:18px}.registration-note-section h3,.member-discussion>h3{font-size:15px;margin:16px 0 0}.registration-notes{max-height:30vh;margin:10px 0 20px}.message-source{color:var(--muted);font-size:12px}

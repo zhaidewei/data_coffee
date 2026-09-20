@@ -38,13 +38,14 @@ async function activitiesFor(env:Env,userId:string) {
 }
 
 export async function exportUserData(env:Env,user:User,exportedAt=Date.now()) {
-  const [activities,audit,notifications,tokens,sessions,aiProposals]=await Promise.all([
+  const [activities,audit,notifications,tokens,sessions,aiProposals,eventMessages]=await Promise.all([
     activitiesFor(env,user.id),
     env.DB.prepare('SELECT event_id AS eventId,action,version,created_at AS createdAt FROM audit WHERE actor_id=? ORDER BY created_at,id').bind(user.id).all(),
     env.DB.prepare('SELECT id,subject,body,status,attempts,created_at AS createdAt,sent_at AS sentAt,kind,priority,deliver_before AS deliverBefore FROM outbox WHERE user_id=? ORDER BY created_at,id').bind(user.id).all(),
     env.DB.prepare('SELECT id,name,scope,created_at AS createdAt,expires_at AS expiresAt,revoked_at AS revokedAt FROM personal_tokens WHERE user_id=? ORDER BY created_at,id').bind(user.id).all(),
     env.DB.prepare('SELECT expires_at AS expiresAt FROM auth_sessions WHERE user_id=? ORDER BY expires_at').bind(user.id).all(),
     env.DB.prepare('SELECT id,event_id AS eventId,action,version,expires_at AS expiresAt,created_at AS createdAt FROM ai_proposals WHERE user_id=? ORDER BY created_at,id').bind(user.id).all(),
+    env.DB.prepare('SELECT id,event_id AS eventId,body,created_at AS createdAt,deleted_at AS deletedAt FROM event_messages WHERE author_id=? ORDER BY created_at,id').bind(user.id).all(),
   ]);
   return {
     schemaVersion:1,
@@ -56,5 +57,6 @@ export async function exportUserData(env:Env,user:User,exportedAt=Date.now()) {
     tokens:tokens.results,
     sessions:sessions.results,
     aiProposals:aiProposals.results,
+    eventMessages:eventMessages.results,
   };
 }

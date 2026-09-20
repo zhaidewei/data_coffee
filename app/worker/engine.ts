@@ -237,7 +237,7 @@ export function applyCommand(e:Activity,cmd:Command,userId:string,now:number,out
       break;
     }
     case 'leave': {
-      const p=e.participants.find(p=>p.userId===userId);if(p){p.status='left';delete p.promotionOfferUntil;delete p.promotionOfferExpired;}promote(e,now,out);break;
+      const p=e.participants.find(p=>p.userId===userId);if(p){p.status='left';delete p.venueVoteId;delete p.promotionOfferUntil;delete p.promotionOfferExpired;}promote(e,now,out);break;
     }
     case 'reply_registration': {
       owner(e,userId);
@@ -263,6 +263,15 @@ export function applyCommand(e:Activity,cmd:Command,userId:string,now:number,out
       e.applications.push(a);
       const reviewers=[e.ownerId];
       for(const reviewer of new Set(reviewers))out.push({userId:reviewer,...noticeSemantics('application_submitted'),subject:'有新的待处理申请',text:`「${e.title}」有新的${kind}申请，请进入活动管理查看。`});break;
+    }
+    case 'venue_vote': {
+      const participant=e.participants.find(p=>p.userId===userId&&p.status==='joined');
+      if(!participant)fail('请先报名，才能投票选择场地',403);
+      if(e.status==='draft'||e.applications.some(a=>a.kind==='venue'&&a.status==='approved'))fail('场地投票已结束',409);
+      const candidate=e.applications.find(a=>a.id===cmd.applicationId&&a.kind==='venue'&&a.status==='pending');
+      if(!candidate)fail('候选场地不存在或已撤回',404);
+      participant.venueVoteId=candidate.id;
+      break;
     }
     case 'review': {
       const a=e.applications.find(a=>a.id===cmd.applicationId);if(!a)fail('申请不存在',404);

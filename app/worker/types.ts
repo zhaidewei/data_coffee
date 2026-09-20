@@ -31,6 +31,7 @@ export interface Rules {
 export interface Participant {
   userId: string; status: 'joined'|'waitlisted'|'left'; appliedAt: number; order: number;
   availableSlotIds?: string[]; timePreference?: string; placePreference?: string; transportPreferences?: string[]; registrationMessage?: string;
+  venueVoteId?: string;
   promotionOfferUntil?: number;
   promotionOfferExpired?: boolean;
   registrationReply?: string; registrationRepliedAt?: number; registrationRepliedBy?: string;
