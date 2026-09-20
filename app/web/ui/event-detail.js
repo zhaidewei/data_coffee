@@ -11,6 +11,19 @@ import {openEventMessages} from './event-messages.js';
 
 // 页面状态与跨页面动作由入口注入；导入模块本身不注册事件。
 export function createEventDetail({command,requireUser,state,renderEventForm,app}) {
+async function resumeRegistration(eventId,intent){
+  if(location.hash!==`#event/${eventId}`||state.event?.id!==eventId){toast('已登录。请返回原活动确认报名。');return false;}
+  app.querySelector('.registration-cta')?.click();
+  const form=document.querySelector('#modal .preference-form');
+  if(!form){toast('活动报名条件已变化，请查看最新安排。');return false;}
+  const offered=[...form.querySelectorAll('input[name="availableSlotIds"]')];
+  for(const input of offered)input.checked=intent.availableSlotIds.includes(input.value);
+  for(const input of form.querySelectorAll('input[name="transportPreferences"]'))input.checked=intent.transportPreferences.includes(input.value);
+  form.elements.registrationMessage.value=intent.registrationMessage;
+  if(intent.availableSlotIds.some(id=>!offered.some(input=>input.value===id))){errorAt(form,new Error('候选时间已变化，请核对保留的报名信息后重新提交。'));return false;}
+  try{await command('join',intent);return true;}
+  catch(error){errorAt(form,error);return false;}
+}
 function confirmation(title,message,action,extra={},reason=false){const f=el('form',{},el('h2',{},title),el('p',{},message));if(reason)f.append(field('原因（将记入活动记录）','reason','textarea'));const b=el('button',{type:'submit',class:'button dark'},'确认');f.append(b);f.onsubmit=async e=>{e.preventDefault();b.disabled=true;try{await command(action,{...extra,...(reason?{reason:f.elements.reason.value}:{})});}catch(err){errorAt(f,err);}finally{b.disabled=false;}};modal(f);}
 function applyForm(kind){if(!requireUser())return;const f=el('form',{},el('h2',{},kind==='host'?'我可以帮忙':`申请${kinds[kind]}`),field('标题','title','text'),field('具体说明','detail','textarea'));if(kind==='venue')f.append(field('可容纳人数（可留空，确认时补充）','capacity','number'),field('详细地址','address','text'),el('p',{class:'muted'},state.event.rules.addressVisibility==='participants'?'地址仅按活动规则向参与者展示。':'此活动将公开场地地址。'));if(kind==='talk')f.append(field('预计时长（分钟）','duration','number',20));if(kind==='pledge')f.append(field('赞助金额（欧元）','amount','number'));if(kind==='venue')f.elements.capacity.required=false;const b=el('button',{class:'button dark',type:'submit'},'提交申请');f.append(el('p',{class:'form-note'},'申请通过后才计入条件。申请只代表你本人，可以在活动中查看处理结果或撤回。'),b);f.onsubmit=async e=>{e.preventDefault();b.disabled=true;const v=Object.fromEntries(new FormData(f));for(const k of ['capacity','amount','duration'])if(k in v){if(k==='capacity'&&v[k]==='')delete v[k];else v[k]=Number(v[k]);}try{await command('apply',{kind,...v});}catch(err){errorAt(f,err);}finally{b.disabled=false;}};modal(f);}
 function confirmVenue(a){const f=el('form',{},el('h2',{},'确认场地 · '+a.title),field('实际可容纳人数','capacity','number',a.capacity||''),el('button',{type:'submit',class:'button dark'},'确认场地'));f.onsubmit=async ev=>{ev.preventDefault();try{await command('review',{applicationId:a.id,approved:true,capacity:Number(f.elements.capacity.value)});}catch(e){errorAt(f,e);}};modal(f);}
@@ -75,7 +88,7 @@ function renderDetail(e){
   if(e.isOwner&&(!joined||joined==='left'))prefForm.append(el('p',{class:'form-note'},'你是发起人，也需要在这里报名并选择可参加时段，才会计入参与人数。'));
   const prefSubmit=el('button',{class:'button orange',type:'submit'},(p?.promotionOfferUntil||0)>Date.now()?'确认接受候补名额':joined&&joined!=='left'?'保存偏好':'报名并保存偏好');
   prefForm.append(el('p',{class:'form-note'},slots.length?(selectedSlot?'最终时段已确认，请确认你可以参加该时段。':'勾选所有可以参加的时段。每个候选日期到期后会单独移除，发布者可从剩余日期中确认最终安排。'):'请确认你可以参加已公布的活动时间。'),prefSubmit);
-  prefForm.onsubmit=async ev=>{ev.preventDefault();prefSubmit.disabled=true;try{const availableSlotIds=new FormData(prefForm).getAll('availableSlotIds');if(slots.length&&!availableSlotIds.length)throw new Error('请至少选择一个可以参加的时段。');if(selectedSlot&&!availableSlotIds.includes(selectedSlot.id))throw new Error('报名需要能够参加已确认的最终时段。');await command('join',{availableSlotIds,transportPreferences:new FormData(prefForm).getAll('transportPreferences'),registrationMessage:prefForm.elements.registrationMessage.value});}catch(err){errorAt(prefForm,err);}finally{prefSubmit.disabled=false;}};
+  prefForm.onsubmit=async ev=>{ev.preventDefault();prefSubmit.disabled=true;try{const data=new FormData(prefForm),availableSlotIds=data.getAll('availableSlotIds');if(slots.length&&!availableSlotIds.length)throw new Error('请至少选择一个可以参加的时段。');if(selectedSlot&&!availableSlotIds.includes(selectedSlot.id))throw new Error('报名需要能够参加已确认的最终时段。');const intent={availableSlotIds,transportPreferences:data.getAll('transportPreferences'),registrationMessage:prefForm.elements.registrationMessage.value};if(!state.user){requireUser(()=>resumeRegistration(e.id,intent));return;}await command('join',intent);}catch(err){errorAt(prefForm,err);}finally{prefSubmit.disabled=false;}};
   const prefSummary=e.preferenceSummary||{times:[],places:[]};
   const replyRegistration=person=>{const form=el('form',{},el('h2',{},'回复报名留言'),el('p',{class:'registration-message'},person.registrationMessage),field('发起人回复','reply','textarea',person.registrationReply||''),el('button',{class:'button dark',type:'submit'},person.registrationReply?'更新回复':'发布回复'));form.elements.reply.maxLength=500;form.onsubmit=async ev=>{ev.preventDefault();const submit=form.querySelector('[type=submit]');submit.disabled=true;try{await command('reply_registration',{participantId:person.participantId,reply:form.elements.reply.value});}catch(error){errorAt(form,error);}finally{submit.disabled=false;}};modal(form);};
   const composeOrganizerMail=()=>{
