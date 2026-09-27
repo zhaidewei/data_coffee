@@ -1,6 +1,6 @@
 import {describe,it,expect} from 'vitest';
 // @ts-ignore shared browser model
-import {localParts,amsterdamMs,weekendCoffeeTemplate,popularity,participationSummary,overviewAction,overviewTiming,lifecycle,registrationLabel} from '../web/event-models.js';
+import {localParts,amsterdamMs,weekendCoffeeTemplate,popularity,participationSummary,overviewAction,overviewPlace,overviewTiming,lifecycle,registrationLabel} from '../web/event-models.js';
 // @ts-ignore browser city catalog
 import {cityCatalog,cityCoordinates,canonicalCity} from '../web/city-catalog.js';
 // @ts-ignore browser city picker
@@ -43,6 +43,11 @@ describe('活动卡片把决定参与的信息压缩成一份',()=>{
   expect(overviewTiming([slot(13),slot(20,14)])).toEqual({dates:'9月13、20日',rhythm:'2 个候选时段'});
   expect(overviewTiming([slot(13),slot(20,14)],true)).toEqual({dates:'时间待定',rhythm:'候选：9月13、20日 · 最终选 1 场'});
   expect(overviewTiming([{startsAt:amsterdamMs('2026-12-27T13:00'),endsAt:amsterdamMs('2026-12-27T15:30')},{startsAt:amsterdamMs('2027-01-03T13:00'),endsAt:amsterdamMs('2027-01-03T15:30')}]).dates).toBe('2026年12月27日、2027年1月3日');
+ });
+ it('场地确认后显示场地名称和允许公开的地址',()=>{
+  expect(overviewPlace({city:'Amstelveen'})).toEqual({name:'Amstelveen',detail:'具体地点以活动最新安排为准'});
+  expect(overviewPlace({city:'Amstelveen',venue:{title:'中心图书馆咖啡厅',address:'Stadsplein 102a'}})).toEqual({name:'中心图书馆咖啡厅',detail:'Stadsplein 102a'});
+  expect(overviewPlace({city:'Amstelveen',venue:{title:'成员提供场地'}})).toEqual({name:'成员提供场地',detail:'详细地址仅向参与者显示'});
  });
 });
 describe('周末模板的荷兰当地日期和业务有效性',()=>{

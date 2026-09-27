@@ -66,5 +66,10 @@ export function overviewTiming(slots=[],undecided=false){
  return {dates,rhythm};
 }
 
+export function overviewPlace(e){
+ if(!e.venue)return {name:e.city,detail:'具体地点以活动最新安排为准'};
+ return {name:e.venue.title,detail:e.venue.address||'详细地址仅向参与者显示'};
+}
+
 export const peopleStops=[[3,0],[10,55],[20,80],[50,94],[100,100]];
 export const peopleScale=(value,from,to)=>{const i=peopleStops.findIndex((point,index)=>index>0&&value<=point[from]);const [a,b]=i<0?peopleStops.slice(-2):[peopleStops[i-1],peopleStops[i]];return a[to]+(value-a[from])/(b[from]-a[from])*(b[to]-a[to]);};

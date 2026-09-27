@@ -133,7 +133,9 @@ export async function project(env:Env,e:Activity,user:User|null,summary=false):P
   const attending=manager||mine?.status==='joined'||mine?.status==='waitlisted';
   if(e.status==='draft'&&e.ownerId!==user?.id)fail('活动不存在',404);
   const addressAllowed=e.rules.addressVisibility==='public'||manager||mine?.status==='joined';
-  const base:Record<string,unknown>={id:e.id,tags:e.tags||[],title:e.title,city:canonicalCity(e.city)||e.city,description:e.description,selectedSlotId:effectiveSlotId(e),rules:e.rules,status:e.status,version:e.version,createdAt:e.createdAt,publishedAt:e.publishedAt,reason:e.reason,counts:{joined:joined(e).length,waitlisted:e.participants.filter(p=>p.status==='waitlisted').length},conditions:conditions(e),repairs:e.repairs,canManage:manager,isOwner:user?.id===e.ownerId};
+  const confirmedVenue=e.applications.find(a=>a.kind==='venue'&&a.status==='approved');
+  const venue=confirmedVenue?{title:confirmedVenue.title,address:addressAllowed?confirmedVenue.address:undefined}:null;
+  const base:Record<string,unknown>={id:e.id,tags:e.tags||[],title:e.title,city:canonicalCity(e.city)||e.city,description:e.description,selectedSlotId:effectiveSlotId(e),venue,rules:e.rules,status:e.status,version:e.version,createdAt:e.createdAt,publishedAt:e.publishedAt,reason:e.reason,counts:{joined:joined(e).length,waitlisted:e.participants.filter(p=>p.status==='waitlisted').length},conditions:conditions(e),repairs:e.repairs,canManage:manager,isOwner:user?.id===e.ownerId};
   if(summary)return base;
   const publisher=await env.DB.prepare('SELECT nickname,public_nickname FROM users WHERE id=?').bind(e.ownerId).first<{nickname:string;public_nickname:number}>();
   base.publisher={nickname:publisher&&(publisher.public_nickname||attending)?publisher.nickname.trim()||'未设置昵称':'匿名成员'};
