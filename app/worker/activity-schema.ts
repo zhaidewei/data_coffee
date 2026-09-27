@@ -63,7 +63,7 @@ function validProcessed(value:unknown):boolean {
 }
 function validActivity(value:unknown):value is Activity {
   if(!record(value)||value.schemaVersion!==ACTIVITY_SCHEMA_VERSION)return false;
-  return optional(value.tags,item=>list(item,string))&&string(value.id)&&string(value.ownerId)&&string(value.title)&&
+  return optional(value.tags,item=>list(item,string))&&string(value.id)&&string(value.ownerId)&&optional(value.managerId,string)&&string(value.title)&&
     string(value.city)&&string(value.description)&&optional(value.selectedSlotId,string)&&validRules(value.rules)&&
     oneOf(value.status,['draft','recruiting','confirmed','repairing','cancelled','completed'])&&integer(value.version)&&
     integer(value.createdAt)&&optional(value.publishedAt,integer)&&list(value.participants,validParticipant)&&

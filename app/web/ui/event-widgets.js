@@ -67,7 +67,7 @@ function slotEditor(initial){
   render();
   return {root,read(){if(!slots.length||slots.length>20)throw new Error('请选择 1–20 个候选日期。');for(const s of slots)if(!(s.startsAt<s.endsAt))throw new Error('每个时段的结束时间须晚于开始时间。');return slots.slice().sort((a,b)=>a.startsAt-b.startsAt).map(s=>({...s}));}};
 }
-function repairChoice(label,name,value,yesText='是 · 限时补齐，超时取消',noText='否 · 由发起人处理'){
+function repairChoice(label,name,value,yesText='是 · 限时补齐，超时取消',noText='否 · 由负责人处理'){
   const yes=el('input',{type:'radio',name,value:'yes',checked:value}),no=el('input',{type:'radio',name,value:'no',checked:!value});
   return el('fieldset',{class:'repair-choice'},el('legend',{},label),el('div',{class:'yes-no-options'},el('label',{},yes,el('span',{},yesText)),el('label',{},no,el('span',{},noText))));
 }

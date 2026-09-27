@@ -23,7 +23,7 @@ it('多人完整活动：报名投票、确认、成行、候补、场地补齐�
  for(const id of ['venue-a','venue-b'])await act(id,'apply',{kind:'venue',title:id,detail:'靠近车站',address:'测试地址',capacity:3});
  await act('alice','apply',{kind:'host',title:'主持报名',detail:'愿意主持'});
  const venueA=e.applications.find(a=>a.userId==='venue-a')!.id,venueB=e.applications.find(a=>a.userId==='venue-b')!.id,host=e.applications.find(a=>a.kind==='host')!.id;
- await expect(execute(env,e.id,{action:'review',applicationId:host,approved:true},user('bob'),'forbidden',e.version,()=>now)).rejects.toThrow('发布者');
+ await expect(execute(env,e.id,{action:'review',applicationId:host,approved:true},user('bob'),'forbidden',e.version,()=>now)).rejects.toThrow('负责人');
  await act('owner','select_time',{slotId:'sat'});expect(e.participants.filter(p=>p.status==='joined').map(p=>p.userId)).toEqual(['owner','alice','bob']);expect(e.participants.find(p=>p.userId==='carol')!.status).toBe('waitlisted');expect(e.participants.find(p=>p.userId==='dave')!.status).toBe('left');
  await act('owner','review',{applicationId:venueA,approved:true});await act('owner','review',{applicationId:host,approved:true});note('确认周六、场地 A、主持人 Alice');
  now=rules.recruitmentDeadline;e=await advance(env,e.id,()=>now);expect(e.status).toBe('confirmed');note('截止成行');
