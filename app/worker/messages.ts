@@ -14,10 +14,10 @@ function writable(event:Activity){
 function validKey(key:string){
   if(!key||key.length>100||!/^[A-Za-z0-9:_-]+$/.test(key))fail('需要有效的操作幂等标识');
 }
-type MessageRow={id:string;author_id:string;body:string;created_at:number;deleted_at:number|null;nickname:string|null;public_nickname:number|null};
+type MessageRow={id:string;author_id:string;body:string;created_at:number;deleted_at:number|null;nickname:string|null};
 const present=(row:MessageRow,user:User,event:Activity)=>({
   id:row.id,
-  author:row.author_id===user.id?'我':row.public_nickname?row.nickname||'匿名成员':'匿名成员',
+  author:row.author_id===user.id?'我':row.nickname?.trim()||'未设置昵称',
   isMine:row.author_id===user.id,
   canDelete:row.author_id===user.id||event.ownerId===user.id,
   body:row.deleted_at===null?row.body:null,
@@ -31,7 +31,7 @@ export async function listMessages(env:Env,eventId:string,user:User,before:strin
     cursor=await env.DB.prepare('SELECT created_at,id FROM event_messages WHERE event_id=? AND id=?').bind(eventId,before).first<{created_at:number;id:string}>();
     if(!cursor)fail('分页标识无效');
   }
-  const rows=await env.DB.prepare(`SELECT m.id,m.author_id,m.body,m.created_at,m.deleted_at,u.nickname,u.public_nickname
+  const rows=await env.DB.prepare(`SELECT m.id,m.author_id,m.body,m.created_at,m.deleted_at,u.nickname
     FROM event_messages m LEFT JOIN users u ON u.id=m.author_id
     WHERE m.event_id=? AND (? IS NULL OR m.created_at<? OR (m.created_at=? AND m.id<?))
     ORDER BY m.created_at DESC,m.id DESC LIMIT 31`).bind(eventId,cursor?.created_at??null,cursor?.created_at??null,cursor?.created_at??null,cursor?.id??null).all<MessageRow>();
