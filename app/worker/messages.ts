@@ -1,8 +1,8 @@
 import type {Activity,Env,User} from './types';
-import {fail,textValue} from './engine';
+import {fail,isManager,textValue} from './engine';
 import {advance} from './store';
 
-const member=(event:Activity,user:User)=>event.ownerId===user.id||event.participants.some(p=>p.userId===user.id&&p.status!=='left');
+const member=(event:Activity,user:User)=>isManager(event,user.id)||event.participants.some(p=>p.userId===user.id&&p.status!=='left');
 async function permitted(env:Env,eventId:string,user:User){
   const event=await advance(env,eventId);
   if(event.status==='draft'||!member(event,user))fail('仅本场参与者可查看成员交流',403);
@@ -19,7 +19,7 @@ const present=(row:MessageRow,user:User,event:Activity)=>({
   id:row.id,
   author:row.author_id===user.id?'我':row.nickname?.trim()||'未设置昵称',
   isMine:row.author_id===user.id,
-  canDelete:row.author_id===user.id||event.ownerId===user.id,
+  canDelete:row.author_id===user.id||isManager(event,user.id),
   body:row.deleted_at===null?row.body:null,
   createdAt:row.created_at,
 });
@@ -53,7 +53,7 @@ export async function postMessage(env:Env,eventId:string,user:User,input:Record<
       SELECT ?,?,?,?,?,? FROM activities AS a
       WHERE a.id=? AND json_extract(a.document,'$.status') IN ('recruiting','confirmed','repairing')
         AND json_extract(a.document,'$.rules.endsAt')>?
-        AND (json_extract(a.document,'$.ownerId')=? OR EXISTS (
+        AND (coalesce(json_extract(a.document,'$.managerId'),json_extract(a.document,'$.ownerId'))=? OR EXISTS (
           SELECT 1 FROM json_each(a.document,'$.participants') AS p
           WHERE json_extract(p.value,'$.userId')=?
             AND json_extract(p.value,'$.status') IN ('joined','waitlisted')
@@ -69,7 +69,7 @@ export async function postMessage(env:Env,eventId:string,user:User,input:Record<
 export async function deleteMessage(env:Env,eventId:string,messageId:string,user:User){
   const event=await permitted(env,eventId,user);
   const result=await env.DB.prepare(`UPDATE event_messages SET body='',deleted_at=?,deleted_by=?
-    WHERE event_id=? AND id=? AND deleted_at IS NULL AND (author_id=? OR ?=?)`).bind(Date.now(),user.id,eventId,messageId,user.id,user.id,event.ownerId).run();
+    WHERE event_id=? AND id=? AND deleted_at IS NULL AND (author_id=? OR ?)`).bind(Date.now(),user.id,eventId,messageId,user.id,isManager(event,user.id)?1:0).run();
   if(!result.meta.changes)fail('留言不存在或无权删除',404);
   return {deleted:true};
 }

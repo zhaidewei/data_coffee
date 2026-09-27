@@ -4,10 +4,11 @@ import type {Activity,Env,User} from './types';
 interface ActivityRow {id:string;version:number;document:string;created_at:number}
 
 function personalActivity(activity:Activity,userId:string) {
-  const {ownerId,...event}=activity;
+  const {ownerId,managerId,...event}=activity;
   return {
     ...event,
     ...(ownerId===userId?{ownerId}:{}),
+    ...(managerId===userId?{managerId}:{}),
     participants:activity.participants.filter(item=>item.userId===userId).map(item=>{
       const {registrationRepliedBy,...participant}=item;
       return {...participant,...(registrationRepliedBy===userId?{registrationRepliedBy}: {})};
@@ -31,7 +32,7 @@ async function activitiesFor(env:Env,userId:string) {
     const rows=await env.DB.prepare(`SELECT id,version,document,created_at FROM activities WHERE id IN (${batch.map(()=>'?').join(',')}) ORDER BY created_at,id`).bind(...batch).all<ActivityRow>();
     for(const row of rows.results){
       const activity=decodeActivityDocument(row.document,{id:row.id,version:row.version,createdAt:row.created_at});
-      if(activity.ownerId===userId||activity.participants.some(item=>item.userId===userId)||activity.applications.some(item=>item.userId===userId)||activity.processed.some(item=>item.userId===userId))activities.push(personalActivity(activity,userId));
+      if(activity.ownerId===userId||activity.managerId===userId||activity.participants.some(item=>item.userId===userId)||activity.applications.some(item=>item.userId===userId)||activity.processed.some(item=>item.userId===userId))activities.push(personalActivity(activity,userId));
     }
   }
   return activities.sort((a,b)=>a.createdAt-b.createdAt||a.id.localeCompare(b.id));

@@ -15,14 +15,14 @@ function event(){
   return e;
 }
 describe('独立评审回归',()=>{
-  it('开始后发布者仍可紧急取消并通知成员',()=>{
+  it('开始后负责人仍可紧急取消并通知成员',()=>{
     const e=event();const out=act(e,{action:'cancel',reason:'现场发生紧急情况'},'owner',rules.startsAt+1);
     expect(e.status).toBe('cancelled');expect(e.reason).toBe('现场发生紧急情况');
     expect(out.filter(n=>n.subject==='活动已取消').map(n=>n.userId).sort()).toEqual(['member','owner','support-a','support-b','waiting']);
   });
-  it('开始后取消仍仅允许发布者',()=>{
+  it('开始后取消仍仅允许负责人',()=>{
     const e=event();
-    expect(()=>act(e,{action:'cancel',reason:'未经授权'},'member',rules.startsAt+1)).toThrow('仅本场发布者');
+    expect(()=>act(e,{action:'cancel',reason:'未经授权'},'member',rules.startsAt+1)).toThrow('仅本场负责人');
     expect(e.status).toBe('confirmed');
   });
   it('开始后候补可以退出且不改变正式名额',()=>{

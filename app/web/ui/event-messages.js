@@ -10,7 +10,7 @@ export function openEventMessages(event){
   const list=el('div',{class:'member-messages',role:'feed','aria-label':'后续留言'});
   const form=el('form',{class:'member-message-form'},el('label',{class:'field'},'给这场活动的成员留言',el('textarea',{name:'body',maxLength:500,required:true,rows:3,placeholder:'例如：我会在咖啡厅门口等大家。'})),el('button',{class:'button dark',type:'submit'},'发送留言'));
   const older=btn('查看更早留言',()=>load(false),'button quiet');older.hidden=true;
-  const root=el('section',{class:'member-discussion'},el('h2',{},'消息线'),el('p',{class:'muted'},'报名留言与发起人回复公开展示；发起人回复会通知留言者。后续留言仅发起人、当前报名者和候补者可见，不发送邮件。'),registrationSection,el('h3',{},'后续留言'),list,older,form,btn('刷新留言',()=>load(true),'button quiet'));
+  const root=el('section',{class:'member-discussion'},el('h2',{},'消息线'),el('p',{class:'muted'},'报名留言与负责人回复公开展示；负责人回复会通知留言者。后续留言仅负责人、当前报名者和候补者可见，不发送邮件。'),registrationSection,el('h3',{},'后续留言'),list,older,form,btn('刷新留言',()=>load(true),'button quiet'));
   const messages=new Map();
   let cursor=null,busy=false,closed=false,renderedMessages='';
   const dialog=document.querySelector('#modal');
@@ -22,7 +22,7 @@ export function openEventMessages(event){
     registrationList.replaceChildren(...notes.map(person=>el('article',{class:'member-message'},
       el('div',{class:'member-message-meta'},el('strong',{},person.nickname),el('span',{class:'message-source'},'报名时留言'),person.appliedAt?el('time',{},displayTime(person.appliedAt)):null),
       el('p',{},person.registrationMessage),
-      person.registrationReply?el('p',{class:'registration-reply'},el('strong',{},'发起人回复：'),person.registrationReply):null)));
+      person.registrationReply?el('p',{class:'registration-reply'},el('strong',{},'负责人回复：'),person.registrationReply):null)));
   }
   function renderMessages(){
     const ordered=[...messages.values()].sort((a,b)=>b.createdAt-a.createdAt||b.id.localeCompare(a.id));

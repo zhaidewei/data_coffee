@@ -43,7 +43,7 @@ export interface Receipt { at: number; kind: string; conditions: Condition[]; re
 export interface Activity {
   schemaVersion: 1;
   tags?: string[];
-  id: string; ownerId: string; title: string; city: string; description: string;
+  id: string; ownerId: string; managerId?: string; title: string; city: string; description: string;
   selectedSlotId?: string; rules: Rules; status: Status; version: number; createdAt: number; publishedAt?: number;
   participants: Participant[]; applications: Application[]; repairs: Repair[];
   receipts: Receipt[]; sequence: number; reason?: string;

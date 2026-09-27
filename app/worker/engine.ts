@@ -56,7 +56,8 @@ export function normalizeTags(input:unknown):string[]{
   return [...unique.values()];
 }
 export const joined = (e: Activity) => e.participants.filter(p=>p.status==='joined');
-export const isManager = (e: Activity, userId: string) => userId===e.ownerId;
+export const managerId = (e: Activity) => e.managerId??e.ownerId;
+export const isManager = (e: Activity, userId: string) => userId===managerId(e);
 export const effectiveSlotId=(e:Activity)=>e.selectedSlotId??(e.rules.timeSlots?.length===1&&!e.receipts.some(receipt=>receipt.kind==='candidate_time_expired')?e.rules.timeSlots[0].id:undefined);
 export function conditions(e: Activity): Condition[] {
   const approved = e.applications.filter(a=>a.status==='approved');
@@ -72,7 +73,7 @@ export function conditions(e: Activity): Condition[] {
   add('hosts','已确认现场负责人',hosts.size,r.minHosts,r.continuousHosts);
   return result;
 }
-function recipients(e:Activity) {return [...new Set([e.ownerId,...e.participants.filter(p=>p.status!=='left').map(p=>p.userId),...e.applications.filter(a=>a.status==='approved').map(a=>a.userId)])];}
+function recipients(e:Activity) {return [...new Set([managerId(e),...e.participants.filter(p=>p.status!=='left').map(p=>p.userId),...e.applications.filter(a=>a.status==='approved').map(a=>a.userId)])];}
 function announce(e:Activity,out:Notice[],semantics:NoticeSemantics,subject:string,body:string) {for(const userId of recipients(e))out.push({...semantics,userId,subject,text:`${e.title}（${e.city}）\n${body}`});}
 function record(e:Activity,at:number,kind:string,reason:string) {e.receipts.push({at,kind,conditions:conditions(e),reason});}
 function cancel(e:Activity,now:number,reason:string,out:Notice[]) {e.status='cancelled';e.reason=reason;e.repairs=[];record(e,now,'cancelled',reason);announce(e,out,noticeSemantics('activity_cancelled'),'活动已取消',reason);}
@@ -150,11 +151,11 @@ function syncRepairs(e:Activity,now:number,out:Notice[]) {
   if(cleared.length){record(e,now,'repair_resolved',`${cleared.map(c=>c.label).join('、')}已补齐`);announce(e,out,noticeSemantics('repair_resolved'),'活动条件已补齐',`${cleared.map(c=>c.label).join('、')}已恢复。请查看其他条件和最新状态。`);}
   e.status=e.repairs.length?'repairing':'confirmed';
 }
-function manager(e:Activity,id:string){if(!isManager(e,id))fail('仅发布者或已批准协办可操作',403);}
-function owner(e:Activity,id:string){if(e.ownerId!==id)fail('仅本场发布者可操作',403);}
+function manager(e:Activity,id:string){if(!isManager(e,id))fail('仅本场负责人可操作',403);}
+function owner(e:Activity,id:string){if(!isManager(e,id))fail('仅本场负责人可操作',403);}
 export function applyCommand(e:Activity,cmd:Command,userId:string,now:number,out:Notice[]):void {
   if(e.status==='cancelled'||e.status==='completed')fail('活动已结束或取消，不能修改',409);
-  const afterStartException=cmd.action==='cancel'||(cmd.action==='leave'&&e.participants.some(p=>p.userId===userId&&p.status==='waitlisted'));
+  const afterStartException=['cancel','transfer_manager'].includes(cmd.action)||(cmd.action==='leave'&&e.participants.some(p=>p.userId===userId&&p.status==='waitlisted'));
   if(now>=e.rules.startsAt && e.status!=='draft'&&!afterStartException)fail('活动已开始，参与和规则变更已关闭',409);
   switch(cmd.action) {
     case 'edit': {
@@ -246,7 +247,18 @@ export function applyCommand(e:Activity,cmd:Command,userId:string,now:number,out
       p.registrationReply=textValue(cmd.reply,'回复',500);
       p.registrationRepliedAt=now;
       p.registrationRepliedBy=userId;
-      out.push({userId:p.userId,...noticeSemantics('registration_reply'),subject:'发起人回复了你的报名留言',text:`「${e.title}」的发起人回复：${p.registrationReply}`});
+      out.push({userId:p.userId,...noticeSemantics('registration_reply'),subject:'负责人回复了你的报名留言',text:`「${e.title}」的负责人回复：${p.registrationReply}`});
+      break;
+    }
+    case 'transfer_manager': {
+      owner(e,userId);
+      if(e.status==='draft')fail('活动发布后才能转让负责人',409);
+      const target=e.participants.find(p=>p.userId===cmd.participantId&&p.status==='joined');
+      if(!target)fail('只能转让给已获得名额的报名成员',409);
+      if(target.userId===managerId(e))fail('该成员已经是负责人',409);
+      const previous=managerId(e);e.managerId=target.userId;
+      out.push({userId:previous,...noticeSemantics('responsibility_transferred'),subject:'活动负责人已转让',text:`你已将「${e.title}」的负责人权限转让给一位报名成员。`});
+      out.push({userId:target.userId,...noticeSemantics('responsibility_transferred'),subject:'你已成为活动负责人',text:`「${e.title}」的负责人权限已转让给你。你现在可以管理时间、场地、报名与参与者邮件。`});
       break;
     }
     case 'apply': {
@@ -261,7 +273,7 @@ export function applyCommand(e:Activity,cmd:Command,userId:string,now:number,out
       if(kind==='pledge'){if(typeof cmd.amount!=='number'||!Number.isFinite(cmd.amount)||cmd.amount<1||cmd.amount>100000)fail('请填写有效赞助意向金额');a.amount=cmd.amount;}
       if(kind==='talk'){if(!Number.isInteger(cmd.duration)||Number(cmd.duration)<1||Number(cmd.duration)>180)fail('分享时长须为1–180分钟');a.duration=Number(cmd.duration);}
       e.applications.push(a);
-      const reviewers=[e.ownerId];
+      const reviewers=[managerId(e)];
       for(const reviewer of new Set(reviewers))out.push({userId:reviewer,...noticeSemantics('application_submitted'),subject:'有新的待处理申请',text:`「${e.title}」有新的${kind}申请，请进入活动管理查看。`});break;
     }
     case 'venue_vote': {
@@ -288,7 +300,7 @@ export function applyCommand(e:Activity,cmd:Command,userId:string,now:number,out
       if(cmd.action==='withdraw'){if(a.userId!==userId)fail('只能撤回本人的申请',403);}else{owner(e,userId);if(a.kind!=='cohost')fail('本入口仅撤销协办资格');}
       if(a.status==='withdrawn')break;
       a.status='withdrawn';a.updatedAt=now;
-      for(const id of new Set([a.userId,e.ownerId]))out.push({userId:id,...noticeSemantics('application_withdrawn'),subject:'申请或资格已撤回',text:`「${e.title}」的${a.kind}申请或资格已撤回。`});break;
+      for(const id of new Set([a.userId,managerId(e)]))out.push({userId:id,...noticeSemantics('application_withdrawn'),subject:'申请或资格已撤回',text:`「${e.title}」的${a.kind}申请或资格已撤回。`});break;
     }
     case 'cancel': owner(e,userId);cancel(e,now,textValue(cmd.reason,'取消原因',500),out);return;
     default: fail('不支持的操作');

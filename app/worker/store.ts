@@ -1,5 +1,5 @@
 import type {Activity, Command, Env, Notice, User} from './types';
-import {applyCommand, conditions, createActivity, DomainError, effectiveSlotId, fail, isManager, joined, nextDue, reconcile, textValue} from './engine';
+import {applyCommand, conditions, createActivity, DomainError, effectiveSlotId, fail, isManager, joined, managerId, nextDue, reconcile, textValue} from './engine';
 import {decodeActivityDocument,encodeActivityDocument} from './activity-schema';
 import {CronBudget,CronBudgetExceeded} from './cron-budget';
 // @ts-expect-error Dependency-free JavaScript shared with the browser.
@@ -103,7 +103,7 @@ const ORGANIZER_MAIL_LIMIT=5;
 export async function sendOrganizerMail(env:Env,id:string,user:User,input:Record<string,unknown>,key:string):Promise<{sent:number;used:number;limit:number}> {
   if(!key||key.length>100||!/^[A-Za-z0-9:_-]+$/.test(key))fail('需要有效的操作幂等标识');
   const e=await advance(env,id);
-  if(e.ownerId!==user.id)fail('仅本场发起人可发送邮件',403);
+  if(!isManager(e,user.id))fail('仅本场负责人可发送邮件',403);
   if(e.status==='draft')fail('活动发布后才能联系参与者',409);
   const subject=textValue(input.subject,'邮件主题',100),message=textValue(input.message,'邮件内容',4000);
   if(!Array.isArray(input.participantIds)||!input.participantIds.length||input.participantIds.length>200)fail('请选择 1–200 位参与者');
@@ -129,24 +129,26 @@ export async function sendOrganizerMail(env:Env,id:string,user:User,input:Record
   return {sent:recipients.length,used:Number(used?.n??0),limit:ORGANIZER_MAIL_LIMIT};
 }
 export async function project(env:Env,e:Activity,user:User|null,summary=false):Promise<Record<string,unknown>>{
-  const manager=!!user&&isManager(e,user.id);const mine=e.participants.find(p=>p.userId===user?.id)??null;
+  const manager=!!user&&isManager(e,user.id);const responsibleId=managerId(e);const mine=e.participants.find(p=>p.userId===user?.id)??null;
   const attending=manager||mine?.status==='joined'||mine?.status==='waitlisted';
   if(e.status==='draft'&&e.ownerId!==user?.id)fail('活动不存在',404);
   const addressAllowed=e.rules.addressVisibility==='public'||manager||mine?.status==='joined';
   const confirmedVenue=e.applications.find(a=>a.kind==='venue'&&a.status==='approved');
   const venue=confirmedVenue?{title:confirmedVenue.title,address:addressAllowed?confirmedVenue.address:undefined}:null;
-  const base:Record<string,unknown>={id:e.id,tags:e.tags||[],title:e.title,city:canonicalCity(e.city)||e.city,description:e.description,selectedSlotId:effectiveSlotId(e),venue,rules:e.rules,status:e.status,version:e.version,createdAt:e.createdAt,publishedAt:e.publishedAt,reason:e.reason,counts:{joined:joined(e).length,waitlisted:e.participants.filter(p=>p.status==='waitlisted').length},conditions:conditions(e),repairs:e.repairs,canManage:manager,isOwner:user?.id===e.ownerId};
+  const base:Record<string,unknown>={id:e.id,tags:e.tags||[],title:e.title,city:canonicalCity(e.city)||e.city,description:e.description,selectedSlotId:effectiveSlotId(e),venue,rules:e.rules,status:e.status,version:e.version,createdAt:e.createdAt,publishedAt:e.publishedAt,reason:e.reason,counts:{joined:joined(e).length,waitlisted:e.participants.filter(p=>p.status==='waitlisted').length},conditions:conditions(e),repairs:e.repairs,canManage:manager,isOwner:manager,isPublisher:user?.id===e.ownerId};
   if(summary)return base;
   const publisher=await env.DB.prepare('SELECT nickname,public_nickname FROM users WHERE id=?').bind(e.ownerId).first<{nickname:string;public_nickname:number}>();
-  base.publisher={nickname:publisher&&(publisher.public_nickname||attending)?publisher.nickname.trim()||'未设置昵称':'匿名成员'};
+  base.publisher={nickname:publisher&&(publisher.public_nickname||attending||user?.id===e.ownerId)?publisher.nickname.trim()||'未设置昵称':'匿名成员'};
+  const organizer=responsibleId===e.ownerId?publisher:await env.DB.prepare('SELECT nickname,public_nickname FROM users WHERE id=?').bind(responsibleId).first<{nickname:string;public_nickname:number}>();
+  base.organizer={nickname:organizer&&(organizer.public_nickname||attending||manager)?organizer.nickname.trim()||'未设置昵称':'匿名成员',isPublisher:responsibleId===e.ownerId};
   const preferenceCounts=(key:'timePreference'|'placePreference')=>[...e.participants.filter(p=>p.status!=='left'&&p[key]).reduce((m,p)=>m.set(p[key]!,1+(m.get(p[key]!)??0)),new Map<string,number>())].sort((a,b)=>b[1]-a[1]||a[0].localeCompare(b[0])).slice(0,8).map(([label,count])=>({label,count}));
   base.preferenceSummary={slots:(e.rules.timeSlots||[]).map(slot=>({id:slot.id,label:new Date(slot.startsAt).toISOString(),count:e.participants.filter(p=>p.status!=='left'&&p.availableSlotIds?.includes(slot.id)).length})),times:preferenceCounts('timePreference'),places:preferenceCounts('placePreference'),transport:[['public_transport','公共交通'],['car','开车']].map(([value,label])=>({label,count:e.participants.filter(p=>p.status!=='left'&&p.transportPreferences?.includes(value)).length}))};
   const ids=[...new Set(e.participants.filter(p=>p.status!=='left').map(p=>p.userId))];
   const names=new Map<string,{nickname:string;public_nickname:number;email:string}>();
   // D1 variable limit is 100; keep batches below it.
   for(let i=0;i<ids.length;i+=80){const batch=ids.slice(i,i+80);const res=await env.DB.prepare(`SELECT id,nickname,public_nickname,email FROM users WHERE id IN (${batch.map(()=>'?').join(',')})`).bind(...batch).all<{id:string;nickname:string;public_nickname:number;email:string}>();for(const n of res.results)names.set(n.id,n);}
-  base.participants=e.participants.filter(p=>p.status!=='left').map(p=>{const n=names.get(p.userId);return {participantId:manager?p.userId:undefined,nickname:n&&(n.public_nickname||attending||user?.id===p.userId)?n.nickname:'匿名成员',email:e.ownerId===user?.id?n?.email:undefined,appliedAt:p.appliedAt,registrationMessage:p.registrationMessage,registrationReply:p.registrationReply,registrationRepliedAt:p.registrationRepliedAt,status:p.status,isMe:user?.id===p.userId};});
-  if(e.ownerId===user?.id){const usage=await env.DB.prepare('SELECT count(*) AS used FROM organizer_mail_campaigns WHERE event_id=?').bind(e.id).first<{used:number}>();base.organizerMail={used:Number(usage?.used??0),limit:ORGANIZER_MAIL_LIMIT};}
+  base.participants=e.participants.filter(p=>p.status!=='left').map(p=>{const n=names.get(p.userId);return {participantId:manager?p.userId:undefined,nickname:n&&(n.public_nickname||attending||user?.id===p.userId)?n.nickname:'匿名成员',email:manager?n?.email:undefined,appliedAt:p.appliedAt,registrationMessage:p.registrationMessage,registrationReply:p.registrationReply,registrationRepliedAt:p.registrationRepliedAt,status:p.status,isMe:user?.id===p.userId,isOrganizer:p.userId===responsibleId};});
+  if(manager){const usage=await env.DB.prepare('SELECT count(*) AS used FROM organizer_mail_campaigns WHERE event_id=?').bind(e.id).first<{used:number}>();base.organizerMail={used:Number(usage?.used??0),limit:ORGANIZER_MAIL_LIMIT};}
   base.myParticipation=mine?{status:mine.status,promotionOfferUntil:mine.promotionOfferUntil,availableSlotIds:mine.availableSlotIds||[],appliedAt:mine.appliedAt,timePreference:mine.timePreference,placePreference:mine.placePreference,transportPreferences:mine.transportPreferences||[],registrationMessage:mine.registrationMessage||'',venueVoteId:mine.venueVoteId,position:mine.status==='waitlisted'?e.participants.filter(p=>p.status==='waitlisted'&&p.order<=mine.order).length:undefined}:null;
   const canVoteVenue=mine?.status==='joined';
   const visible=(a:Activity['applications'][number])=>manager||a.userId===user?.id||(a.kind==='venue'&&canVoteVenue&&a.status==='pending')||(['venue','talk','material','pledge'].includes(a.kind)&&a.status==='approved');
