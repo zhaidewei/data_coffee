@@ -34,7 +34,7 @@ it('成员与候补可交流，访客不可见；重复发送不改活动版本�
   await postMessage(env,event.id,user('waiting'),{body:'我在候补'},'waiting');
   const page=await listMessages(env,event.id,user('owner'),null);
   expect(page.messages).toHaveLength(2);
-  expect(page.messages.map(m=>m.author)).toContain('匿名成员');
+  expect(page.messages.map(m=>m.author)).toContain('waiting');
   expect(page.messages.map(m=>m.author)).toContain('joined');
   expect(JSON.stringify(page)).not.toContain('@test.invalid');
   expect((await load(env,event.id)).version).toBe(version);
