@@ -4,7 +4,7 @@ const fs = require('node:fs'), http = require('node:http'), path = require('node
 const root = path.resolve(process.argv[2] || path.join(__dirname, '../web')), name = 'css-smoke', out = process.env.CSS_SMOKE_OUTPUT || require('node:os').tmpdir() + '/data-coffee-css-smoke';
 fs.mkdirSync(out, { recursive: true });
 const startsAt = Date.parse('2026-09-26T12:00Z'), rules = { startsAt, endsAt: startsAt + 10800000, timeSlots: [{id:'slot-a',startsAt,endsAt:startsAt+10800000},{id:'slot-b',startsAt:startsAt+7*86400000,endsAt:startsAt+7*86400000+10800000}], recruitmentDeadline: startsAt - 86400000, registrationDeadline: startsAt - 3600000, promotionDeadline: startsAt - 3600000, minPeople: 3, maxPeople: 8, minHosts: 0, minTalks: 0, minCohosts: 0, venueRequired: false, waitlist: true, repairMinutes: 60, continuousVenue: true, continuousHosts: true };
-const event = { id: 'css-smoke', title: '数据同行周末咖啡', description: '一起聊数据、工具与生活。', city: 'Amsterdam', status: 'recruiting', version: 1, rules, tags: ['AI', 'Data'], counts: { joined: 4, waitlisted: 1 }, conditions: [{ key: 'people', label: '人数', required: 3, current: 4, satisfied: true }], repairs: [], participants: [], applications: [], myApplications: [], receipts: [], preferenceSummary: { slots: [], times: [], places: [], transport: [] }, publisher: { nickname: '社区成员' }, myParticipation: null, canManage: false, isOwner: false, createdAt: startsAt - 7 * 86400000 };
+const event = { id: 'css-smoke', title: '数据同行周末咖啡｜荷兰生活和工作杂谈', description: '找家咖啡馆，坐下来聊聊在荷兰的生活和工作。求职、职场文化、换工作、日常生活、城市体验、最近遇到的趣事和烦恼，都可以聊。欢迎数据同行，也欢迎对这些话题感兴趣的朋友；带着自己的经历或问题来就好。', city: 'Amsterdam', status: 'recruiting', version: 1, rules, tags: ['荷兰生活', '工作', '闲谈'], counts: { joined: 4, waitlisted: 1 }, conditions: [{ key: 'people', label: '人数', required: 3, current: 4, satisfied: true }], repairs: [], participants: [], applications: [], myApplications: [], receipts: [], preferenceSummary: { slots: [], times: [], places: [], transport: [] }, publisher: { nickname: '社区成员' }, myParticipation: null, canManage: false, isOwner: false, createdAt: startsAt - 7 * 86400000 };
 const user = { id: 'smoke-user', nickname: '测试成员', publicNickname: true };
 (async () => {
     const server = http.createServer((req, res) => { let p = decodeURIComponent(new URL(req.url, 'http://localhost').pathname); if (p === '/')
@@ -44,6 +44,21 @@ const user = { id: 'smoke-user', nickname: '测试成员', publicNickname: true 
                     await page.locator(view === 'home' || view === 'water-fallback' ? '.overview-event' : view === 'form' ? '.wide-form' : view === 'cli' ? '.cli-reference' : '.dag-node').first().waitFor({ timeout: 5000 }).catch(async (e) => { console.error(await page.locator('body').innerText()); throw e; });
                     await page.evaluate(theme => document.documentElement.dataset.theme = theme, theme);
                     if (view === 'home') {
+                        // 长介绍不能挤窄中文标签：整条标签换行，并留在卡片内。
+                        const tagLayout = await page.locator('.overview-event').evaluate(card => {
+                            const bounds = card.getBoundingClientRect(), copy = card.querySelector('.overview-title-copy').getBoundingClientRect();
+                            return [...card.querySelectorAll('.event-tags span')].map(tag => {
+                                const box = tag.getBoundingClientRect(), text = document.createRange();
+                                text.selectNodeContents(tag);
+                                return { label: tag.textContent, lines: text.getClientRects().length, belowCopy: box.top >= copy.bottom - 1, insideCard: box.left >= bounds.left && box.right <= bounds.right };
+                            });
+                        });
+                        assert.equal(tagLayout.length, 3);
+                        for (const tag of tagLayout) {
+                            assert.equal(tag.lines, 1, tag.label + ' 须完整显示在一行');
+                            assert.ok(tag.belowCopy, '标签应位于介绍下方');
+                            assert.ok(tag.insideCard, '标签不能超出卡片边界');
+                        }
                         assert.equal(await page.locator('.overview-card-cta').innerText(), '查看并报名');
                         assert.equal(await page.locator('.overview-card-fact').first().locator('dd strong').innerText(),'时间待定');
                         assert.match(await page.locator('.overview-card-fact').first().locator('dd small').innerText(),/最终选 1 场/);

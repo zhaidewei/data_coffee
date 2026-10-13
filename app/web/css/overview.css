@@ -28,13 +28,13 @@
 .overview-dates input { background: #141c2a; color: var(--ink); border-color: #3c4c63; border-radius: 4px; }
 .coffee-dags-title .airflow-joke { color: var(--muted); font-weight: 400; text-decoration-thickness: 2px; text-decoration-color: var(--orange); }
 .overview-heading .coffee-dags-title { line-height: 1.4; overflow-wrap: normal; }
-.overview-event-heading { align-items: flex-start; }
+.overview-event-heading { display: grid; grid-template-columns: minmax(0,1fr); align-items: flex-start; }
 .overview-title-copy { min-width: 0; }
 .overview-title-copy h3 { margin: 0; }
 .overview-title-copy .overview-description { display: block; margin: 5px 0 0; font-size: 12px; line-height: 1.55; }
 .overview-heading-meta { display: flex; align-items: flex-start; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
-.overview-heading-meta .event-tags { justify-content: flex-end; }
-.overview-heading-meta .event-tags span { padding: 2px 8px; font-weight: 600; background: #253c56; border-color: #496b91; color: #c9e3ff; }
+.overview-heading-meta .event-tags { flex: 1 1 240px; justify-content: flex-start; }
+.overview-heading-meta .event-tags span { padding: 2px 8px; font-weight: 600; white-space: nowrap; flex-shrink: 0; background: #253c56; border-color: #496b91; color: #c9e3ff; }
 .overview-card-visual { display: grid; grid-template-columns: minmax(0,1fr) minmax(240px,.8fr); gap: 28px; align-items: end; margin: 18px 0 2px; }
 .overview-card-facts { display: grid; gap: 15px; margin: 0; }
 .overview-card-fact { display: grid; grid-template-columns: 58px minmax(0,1fr); gap: 10px; }
