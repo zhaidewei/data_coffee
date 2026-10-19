@@ -8,6 +8,7 @@ import {body,secureResponse} from './http';
 import {listEvents} from './list';
 import {exportUserData} from './self-export';
 import {CronBudget} from './cron-budget';
+import {cleanupExpired,MAINTENANCE_CRON,MINUTE_CRON} from './maintenance';
 import {operations} from './operations';
 import {deleteMessage,listMessages,postMessage} from './messages';
 export {body} from './http';
@@ -91,7 +92,14 @@ export default {
     }
     return secureResponse(res,isApi);
   },
-  async scheduled(_event:ScheduledController,env:Env,_ctx:ExecutionContext){
+  async scheduled(event:ScheduledController,env:Env,_ctx:ExecutionContext){
+    if(event.cron===MAINTENANCE_CRON){
+      const cleanup=await cleanupExpired(env);
+      console.log(JSON.stringify({event:'maintenance_completed',cleanup,d1Statements:cleanup.length}));
+      if(cleanup.some(result=>result.failed))throw new Error('maintenance_cleanup_failed');
+      return;
+    }
+    if(event.cron!==MINUTE_CRON)throw new Error('unknown_cron');
     const budget=new CronBudget();
     const activity=await tick(env,budget);
     const mail=await drainMail(budget.env(env,'mail'),Math.min(10,budget.remainingWork('mail')),Math.min(40,budget.remainingD1('mail')));

@@ -177,7 +177,5 @@ export async function tick(env:Env,budget?:CronBudget):Promise<TickStats>{
     try{budget?.takeWork('tick');stats.attempted++;await advance(bounded,row.id);stats.settled++;}
     catch(error){if(error instanceof CronBudgetExceeded){stats.budgetExhausted=true;break;}stats.failed++;console.error('activity_reconcile_failed');}
   }
-  try{await bounded.DB.prepare('DELETE FROM ai_proposals WHERE expires_at<?').bind(now-86400000).run();}
-  catch(error){if(error instanceof CronBudgetExceeded)stats.budgetExhausted=true;else{stats.phaseError='ai_cleanup_failed';console.error('ai_cleanup_failed');}}
   return stats;
 }

@@ -27,7 +27,7 @@ npm run dev
 
 `npm run deploy:dev` 依次执行 preflight、`npm ci`、类型检查、测试和 dry-run build，再次核对 Git 与 D1 后才调用 Wrangler。部署把完整 Git SHA 写入 `APP_VERSION` 和 Worker 版本说明。`/api/health` 返回该版本；配置里的 `APP_VERSION=local` 仅作为绕过发布脚本时的明显占位值。
 
-`/api/health/operations` 返回不含用户与活动内容的实时运维汇总：到期活动数量与最老积压年龄、可领取邮件数量与最老积压年龄，以及终态失败和需人工核对数量。Scheduled invocation 共用 50 条 D1 statement、12 个工作单位的账本；活动结算最多使用 30 条 statement 和 8 个工作单位，固定为邮件保留 20 条 statement 和 4 个工作单位。每轮写一条 `cron_completed` 结构化日志，包含两阶段结果和实际预算消耗。
+`/api/health/operations` 返回不含用户与活动内容的实时运维汇总：到期活动数量与最老积压年龄、可领取邮件数量与最老积压年龄，以及终态失败和需人工核对数量。每分钟 invocation 共用 50 条 D1 statement、12 个工作单位的账本；活动结算最多使用 30 条 statement 和 8 个工作单位，固定为邮件保留 20 条 statement 和 4 个工作单位。每轮写一条 `cron_completed` 结构化日志，包含两阶段结果和实际预算消耗。每小时的独立 invocation 只执行清理，输出 `maintenance_completed`，其中包含每表删除数、失败状态、是否可能仍有积压和 SQL 次数；任一表失败时，在其他表处理后报告 invocation 失败。
 
 部署后脚本只读回 canonical production URL，并要求 health 环境为 `production`；`DATA_COFFEE_BASE_URL` 不影响部署。它核对 `/api/health`、`/api/health/operations`，读取 `/api/events?page=1&pageSize=1` 验证 pagination 元数据，并通过只读 D1 查询输出 outbox 状态计数及已到期活动数量。活动列表 API 只返回已存储快照，不执行结算或写入。脚本输出不包含活动正文、用户、邮箱、邮件内容或密钥。也可单独执行 `npm run release:readback -- --expected-version <40位Git SHA>`；只有这个独立 readback 接受 `DATA_COFFEE_BASE_URL` 或 `--base-url` 指定另一个不含凭据的 HTTPS 地址。
 
@@ -63,6 +63,8 @@ node cli/dc-flow.mjs events action EVENT_ID publish --version 0 --key publish-un
 ## 维护与故障定位
 
 - 每分钟 Cron 使用共享预算推进到期活动并发送通知：活动阶段最多使用 30 条 D1 statement 和 8 个工作单位，邮件阶段始终保留 20 条 statement 和 4 个工作单位。活动详情读取和写操作也会先补做该活动结算，首页列表保持只读。页面可见时每30秒检查活动状态。时钟倒计时不代表后台已提交结算。
+- `17 * * * *` 在每小时第17分钟（UTC）清理 AI 建议、会话、验证码、限流记录和邮件额度历史，每表每次最多删除100条。保留原有过期/留存阈值；会话、验证码及 AI 建议仍在请求内立即校验有效期。单表失败不阻断其他表；达到上限或错过一次调度时，后续小时任务继续处理积压。清理不处理 outbox、冻结 payload 或服务商发送凭据。
+- 邮件领取将可重试待发和过期租约分为两类候选，通过 `0011_outbox_due_candidates.sql` 的部分索引排除终态历史，仍以单条原子 SQL 领取并按原优先级排序。上线前先应用该新增迁移，再发布代码并核对两条 Cron 及各自日志。回退时恢复旧分钟入口并移除小时触发器，避免长期重复清理；索引可保留供后续核对。
 - D1 `activities` 为活动状态，`audit` 为操作索引，介绍修订前后正文在活动 receipts 中；`outbox` 为通知状态。邮箱及申请详情属于私有数据，不导出至公共日志。
 - `outbox.sent` 表示服务商已接收。失败原因采用安全代码；网络结果不确定超过25分钟后停止自动重发，由维护者核对 Brevo 接收记录。不要直接清空幂等信息重发。
 - 日额度默认配置280次，并为登录邮件预留余量；700人同时需要通知可能跨日排队，页面状态即时可查。验证码过期为10分钟，会话为30天。
