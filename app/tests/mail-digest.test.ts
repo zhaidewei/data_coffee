@@ -3,12 +3,13 @@ import {afterAll,afterEach,beforeAll,beforeEach,expect,it,vi} from 'vitest';
 import {Miniflare,convertV4MiniflareOptions} from 'miniflare';
 import {readFile} from 'node:fs/promises';
 import {drainMail,sendEmail} from '../worker/mail';
+import {CLAIM_MAIL_SQL} from '../worker/mail-claim';
 import type {Env} from '../worker/types';
 let mf:Miniflare,env:Env;
 beforeAll(async()=>{
  mf=new Miniflare(convertV4MiniflareOptions({name:'digest',modules:true,script:'export default {fetch(){return new Response("test")}}',compatibilityDate:'2026-09-05',d1Databases:{DB:'digest-test'}}));
  const DB=await mf.getD1Database('DB') as unknown as D1Database;
- for(const file of ['0001_events.sql','0002_identity.sql','0006_mail_digest.sql','0008_outbox_notice_kind.sql','0009_organizer_mail.sql'])for(const sql of (await readFile(new URL(`../migrations/${file}`,import.meta.url),'utf8')).replace(/--[^\n]*/g,'').split(';').map(s=>s.trim()).filter(Boolean))await DB.prepare(sql).run();
+ for(const file of ['0001_events.sql','0002_identity.sql','0006_mail_digest.sql','0008_outbox_notice_kind.sql','0009_organizer_mail.sql','0011_outbox_due_candidates.sql'])for(const sql of (await readFile(new URL(`../migrations/${file}`,import.meta.url),'utf8')).replace(/--[^\n]*/g,'').split(';').map(s=>s.trim()).filter(Boolean))await DB.prepare(sql).run();
  env={DB,ASSETS:{} as Fetcher,APP_ENV:'development',BREVO_API_KEY:'fake',EMAIL_FROM:'sender@example.com'};
 });
 afterAll(async()=>{await mf?.dispose();});
@@ -116,4 +117,48 @@ it('兼容旧分组的冻结重试并完整确认成员，不追加新成员',as
  await env.DB.prepare('INSERT INTO mail_payload VALUES (?,?)').bind('leader',stable).run();await env.DB.prepare('INSERT INTO mail_dispatch VALUES (?,?,?)').bind('leader',key,Date.now()).run();
  const {bodies}=provider();await drainMail(env,1);expect(bodies).toEqual([stable]);
  expect((await env.DB.prepare("SELECT status FROM outbox WHERE id='member'").first())!.status).toBe('sent');expect((await env.DB.prepare("SELECT status FROM outbox WHERE id='new'").first())!.status).toBe('pending');
+});
+
+it('终态历史不放大空队列读取，候选分支实际使用到期部分索引',async()=>{
+ const now=Date.now();
+ await env.DB.prepare(`WITH RECURSIVE n(x) AS (SELECT 1 UNION ALL SELECT x+1 FROM n WHERE x<5000)
+   INSERT INTO outbox(id,user_id,subject,body,status,attempts,next_attempt,created_at)
+   SELECT 'history-'||x,'a','history','history',CASE WHEN x%2=0 THEN 'sent' ELSE 'failed' END,5,0,0 FROM n`).run();
+ const old=await env.DB.prepare(`SELECT id FROM outbox WHERE digest_id IS NULL
+   AND (? >= 12 OR (NOT (kind='application_submitted' AND priority=2 AND deliver_before IS NULL)
+     AND NOT EXISTS(SELECT 1 FROM outbox m WHERE m.digest_id=outbox.id)))
+   AND ((status IN ('pending','failed') AND next_attempt<=? AND attempts<5) OR (status='sending' AND claimed_until<=?))
+   ORDER BY priority,deliver_before IS NULL,deliver_before,created_at,id LIMIT 1`).bind(40,now,now).all();
+ const optimized=await env.DB.prepare(CLAIM_MAIL_SQL).bind(now,now,now+120_000,40).all();
+ expect(old.results).toEqual([]);expect(optimized.results).toEqual([]);
+ expect(old.meta.rows_read).toBeGreaterThan(1000);
+ const plan=await env.DB.prepare(`EXPLAIN QUERY PLAN ${CLAIM_MAIL_SQL}`).bind(now,now,now+120_000,40).all();
+ expect(optimized.meta.rows_read).toBeLessThan(old.meta.rows_read/10);
+ expect(JSON.stringify(plan.results)).toContain('outbox_pending_due');
+ expect(JSON.stringify(plan.results)).toContain('outbox_sending_due');
+ console.log(JSON.stringify({benchmark:'empty_outbox_5000_history',beforeRowsRead:old.meta.rows_read,afterRowsRead:optimized.meta.rows_read}));
+});
+
+it('合并待发与过期租约候选后保持跨分支的期限顺序，排除未到期和终态',async()=>{
+ const now=Date.now();
+ for(const id of ['retry','expired','future','held','terminal','member'])await enqueue(id,'a',id,'promotion_offer',now+60_000);
+ await env.DB.prepare("UPDATE outbox SET status='failed',attempts=1,next_attempt=0 WHERE id='retry'").run();
+ await env.DB.prepare("UPDATE outbox SET status='sending',attempts=5,claimed_until=0,deliver_before=? WHERE id='expired'").bind(now+30_000).run();
+ await env.DB.prepare("UPDATE outbox SET next_attempt=? WHERE id='future'").bind(now+60_000).run();
+ await env.DB.prepare("UPDATE outbox SET status='sending',claimed_until=? WHERE id='held'").bind(now+60_000).run();
+ await env.DB.prepare("UPDATE outbox SET status='failed',attempts=5 WHERE id='terminal'").run();
+ await env.DB.prepare("UPDATE outbox SET digest_id='retry',status='bundled' WHERE id='member'").run();
+ const first=await env.DB.prepare(CLAIM_MAIL_SQL).bind(now,now,now+120_000,40).first<{id:string;attempts:number}>();
+ expect(first).toMatchObject({id:'expired',attempts:6});
+ const second=await env.DB.prepare(CLAIM_MAIL_SQL).bind(now,now,now+120_000,40).first<{id:string}>();
+ expect(second?.id).toBe('retry');
+ expect(await env.DB.prepare(CLAIM_MAIL_SQL).bind(now,now,now+120_000,40).first()).toBeNull();
+});
+
+it('低SQL预算跳过新聚合和既有组，仍能发送独立通知',async()=>{
+ await enqueue('digest');await enqueue('leader');await enqueue('member');await enqueue('independent','b','独立','registration_reply');
+ await env.DB.prepare("UPDATE outbox SET status='bundled',digest_id='leader' WHERE id='member'").run();
+ const {bodies}=provider();await drainMail(env,10,8);
+ expect(bodies).toHaveLength(1);expect(JSON.parse(bodies[0]).subject).toBe('独立');
+ expect((await env.DB.prepare("SELECT status FROM outbox WHERE id='leader'").first())!.status).toBe('pending');
 });

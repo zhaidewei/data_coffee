@@ -1,4 +1,5 @@
-import {canDigestNotice,digestEligibleSQL,noticeOrderSQL} from './notices';
+import {canDigestNotice,digestEligibleSQL} from './notices';
+import {CLAIM_MAIL_SQL} from './mail-claim';
 import type { Env } from './types';
 
 class MailError extends Error {
@@ -58,26 +59,19 @@ const NEVER = 8640000000000000;
 export interface MailDrainStats {claimed:number;sent:number;retryableFailures:number;terminalFailures:number;manualReviewFailures:number;d1Statements:number;budgetExhausted:boolean;phaseError:string|null}
 export async function drainMail(env: Env, limit = 10, queryBudget = 40): Promise<MailDrainStats> {
   // Count actual SQL statements, reserving the worst-case recovery cost before
-  // claiming: 8 for an independent mail, 12 for a digest, plus 4 for cleanup.
+  // claiming: 8 for an independent mail, 12 for a digest.
   const budget = Math.max(0,Math.min(40,Number.isFinite(queryBudget)?Math.floor(queryBudget):40));
   const count = Math.max(0, Math.min(50, Math.floor(Number.isFinite(limit) ? limit : 10)));
   const stats:MailDrainStats={claimed:0,sent:0,retryableFailures:0,terminalFailures:0,manualReviewFailures:0,d1Statements:0,budgetExhausted:false,phaseError:null};
-  if (budget < 4) {stats.budgetExhausted=true;return stats;}
+  if (budget < 8) {stats.budgetExhausted=true;return stats;}
   let queries = 0;
   const prepare = (sql: string) => { queries++; return env.DB.prepare(sql); };
   try{
   for (let index = 0; index < count; index++) {
-    const remaining = budget - queries - 4;
+    const remaining = budget - queries;
     if (remaining < 8) {stats.budgetExhausted=true;break;}
     const now = Date.now(), lease = now + 120_000;
-    const row = await prepare(`UPDATE outbox SET status='sending',claimed_until=?,attempts=attempts+1
-      WHERE id=(SELECT id FROM outbox WHERE digest_id IS NULL
-        AND (? >= 12 OR (NOT (${digestEligibleSQL}) AND NOT EXISTS(SELECT 1 FROM outbox m WHERE m.digest_id=outbox.id))) AND
-        ((status IN ('pending','failed') AND next_attempt<=? AND attempts<5)
-          OR (status='sending' AND claimed_until<=?))
-        ORDER BY ${noticeOrderSQL} LIMIT 1)
-      RETURNING id,user_id,subject,body,attempts,claimed_until,kind,priority,deliver_before,
-        EXISTS(SELECT 1 FROM outbox m WHERE m.digest_id=outbox.id) AS has_members`).bind(lease, remaining, now, now).first<MailRow>();
+    const row = await prepare(CLAIM_MAIL_SQL).bind(now,now,lease,remaining).first<MailRow>();
     if (!row) break;
     stats.claimed++;
     const eligible = canDigestNotice(row.kind,row.priority,row.deliver_before);
@@ -157,14 +151,6 @@ export async function drainMail(env: Env, limit = 10, queryBudget = 40): Promise
       if(known.code.endsWith('_manual_review'))stats.manualReviewFailures++;
     }
   }
-  // Bounded cleanup carries no PII into logs and keeps auth auxiliary tables small.
-  const now = Date.now();
-  await env.DB.batch([
-    prepare('DELETE FROM auth_sessions WHERE expires_at<?').bind(now),
-    prepare('DELETE FROM auth_codes WHERE expires_at<?').bind(now - 86400000),
-    prepare('DELETE FROM auth_rate_limits WHERE window_start<?').bind(now - 86400000),
-    prepare('DELETE FROM mail_daily_budget WHERE day<?').bind(new Date(now - 7 * 86400000).toISOString().slice(0, 10)),
-  ]);
   stats.d1Statements=queries;
   return stats;
   }catch{

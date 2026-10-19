@@ -4,6 +4,7 @@ import {readFile} from 'node:fs/promises';
 import worker from '../worker/index';
 import {operations} from '../worker/operations';
 import {CronBudget} from '../worker/cron-budget';
+import {MINUTE_CRON} from '../worker/maintenance';
 import {load,tick} from '../worker/store';
 import type {Activity,Env} from '../worker/types';
 
@@ -28,7 +29,7 @@ function failPrepare(match:(sql:string)=>boolean){
 }
 async function scheduled(DB:D1Database=env.DB){
   const logs:string[]=[];const log=vi.spyOn(console,'log').mockImplementation(value=>logs.push(String(value)));const error=vi.spyOn(console,'error').mockImplementation(()=>{});
-  await worker.scheduled!({} as ScheduledController,{...env,DB},{} as ExecutionContext);
+  await worker.scheduled!({cron:MINUTE_CRON} as ScheduledController,{...env,DB},{} as ExecutionContext);
   const report=JSON.parse(logs.at(-1)!);log.mockRestore();error.mockRestore();return report;
 }
 
@@ -50,13 +51,10 @@ it('同一轮大量到期活动仍保留邮件预算，并输出可核对的共�
   expect(report.budget.d1.mailReserve).toBe(20);
 });
 
-it.each([
-  ['到期扫描', (sql:string)=>sql.includes('SELECT id FROM activities'), 'activity_scan_failed'],
-  ['AI清理', (sql:string)=>sql.includes('DELETE FROM ai_proposals'), 'ai_cleanup_failed'],
-])('%s失败不会跳过邮件，账本保留已执行阶段',async(_name,match,error)=>{
+it('到期扫描失败不会跳过邮件，账本保留已执行阶段',async()=>{
   await urgent();const bodies:string[]=[];vi.stubGlobal('fetch',vi.fn(async(_url:string,init:RequestInit)=>{bodies.push(String(init.body));return new Response('{}',{status:201});}));
-  const report=await scheduled(failPrepare(match));
-  expect(report.activity.phaseError).toBe(error);expect(report.mail.sent).toBe(1);expect(bodies).toHaveLength(1);
+  const report=await scheduled(failPrepare(sql=>sql.includes('SELECT id FROM activities')));
+  expect(report.activity.phaseError).toBe('activity_scan_failed');expect(report.mail.sent).toBe(1);expect(bodies).toHaveLength(1);
   expect(report.budget.d1.tick).toBeGreaterThan(0);expect(report.budget.d1.mail).toBeGreaterThan(0);
 });
 
@@ -69,11 +67,14 @@ it('邮件领取失败仍输出部分账本，后续 invocation 可恢复',async
   expect(recovered.mail).toMatchObject({sent:1,phaseError:null});expect(fetcher).toHaveBeenCalledTimes(1);
 });
 
-it('邮件已发送后的最终清理失败不丢账本，下一轮不重复发送',async()=>{
+it('分钟任务不再执行清理，邮件完成后下一轮不重复发送',async()=>{
   await urgent();const fetcher=vi.fn(async()=>new Response('{}',{status:201}));vi.stubGlobal('fetch',fetcher);
-  const failed=await scheduled(failPrepare(sql=>sql.includes('DELETE FROM auth_sessions')));
-  expect(failed.mail).toMatchObject({claimed:1,sent:1,phaseError:'mail_drain_failed'});
-  expect(failed.budget.d1.mail).toBe(failed.mail.d1Statements);
+  const statements:string[]=[];
+  const DB=new Proxy(env.DB,{get(target,key){if(key==='prepare')return(sql:string)=>{statements.push(sql);return target.prepare(sql);};const value=Reflect.get(target,key);return typeof value==='function'?value.bind(target):value;}});
+  const first=await scheduled(DB);
+  expect(first.mail).toMatchObject({claimed:1,sent:1,phaseError:null});
+  expect(statements.some(sql=>sql.includes('DELETE FROM'))).toBe(false);
+  expect(first.budget.d1.mail).toBe(first.mail.d1Statements);
   const recovered=await scheduled();
   expect(recovered.mail.phaseError).toBeNull();expect(fetcher).toHaveBeenCalledTimes(1);
 });
@@ -90,7 +91,7 @@ it('单个活动产生2001条通知时仍只占一条写入语句，且不会阻
   let statements=0;const DB=new Proxy(env.DB,{get(target,key){if(key==='prepare')return(sql:string)=>{statements++;return target.prepare(sql);};const value=Reflect.get(target,key);return typeof value==='function'?value.bind(target):value;}});
   const stats=await tick({...env,DB},new CronBudget());
   expect(stats).toMatchObject({dueScanned:2,attempted:2,settled:2,failed:0,budgetExhausted:false});
-  expect(statements).toBe(10);
+  expect(statements).toBe(9);
   expect((await load(env,'large')).status).toBe('cancelled');
   expect((await load(env,'later')).status).toBe('cancelled');
   expect((await env.DB.prepare("SELECT count(*) AS n FROM outbox WHERE kind='activity_cancelled'").first())!.n).toBe(2002);
