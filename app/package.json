@@ -18,7 +18,6 @@
     "release:preflight": "node scripts/release-preflight.mjs",
     "release:readback": "node scripts/release-readback.mjs",
     "release:deploy": "node scripts/release-deploy.mjs",
-    "deploy:dev": "npm run release:deploy",
     "test:css": "node scripts/css-smoke.cjs"
   },
   "devDependencies": {

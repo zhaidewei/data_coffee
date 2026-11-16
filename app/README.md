@@ -25,7 +25,7 @@ npm run dev
 
 首次启用时，先把 CI workflow 合并到远端，让 GitHub 至少运行一次 `App Worker`，再在 branch protection 中把该 check 设为 required；完成前 preflight 会按设计拒绝发布。发布机需安装并登录 `gh` 与 Wrangler CLI，两者仅使用各自现有凭据，脚本不读取或打印凭据。
 
-`npm run deploy:dev` 依次执行 preflight、`npm ci`、类型检查、测试和 dry-run build，再次核对 Git 与 D1 后才调用 Wrangler。部署把完整 Git SHA 写入 `APP_VERSION` 和 Worker 版本说明。`/api/health` 返回该版本；配置里的 `APP_VERSION=local` 仅作为绕过发布脚本时的明显占位值。
+`npm run release:deploy` 依次执行 preflight、`npm ci`、类型检查、测试和 dry-run build，再次核对 Git 与 D1 后才调用 Wrangler。部署把完整 Git SHA 写入 `APP_VERSION` 和 Worker 版本说明。`/api/health` 返回该版本；配置里的 `APP_VERSION=local` 仅作为绕过发布脚本时的明显占位值。
 
 `/api/health/operations` 返回不含用户与活动内容的实时运维汇总：到期活动数量与最老积压年龄、可领取邮件数量与最老积压年龄，以及终态失败和需人工核对数量。每分钟 invocation 共用 50 条 D1 statement、12 个工作单位的账本；活动结算最多使用 30 条 statement 和 8 个工作单位，固定为邮件保留 20 条 statement 和 4 个工作单位。每轮写一条 `cron_completed` 结构化日志，包含两阶段结果和实际预算消耗。每小时的独立 invocation 只执行清理，输出 `maintenance_completed`，其中包含每表删除数、失败状态、是否可能仍有积压和 SQL 次数；任一表失败时，在其他表处理后报告 invocation 失败。
 
@@ -54,11 +54,11 @@ node cli/dc-flow.mjs events action EVENT_ID publish --version 0 --key publish-un
 
 ## 云端开发环境准备
 
-当前测试环境为 https://data-coffee-dev.dewei-zhai.workers.dev ，`wrangler.jsonc` 已绑定对应的独立 D1 数据库。迁移 0001–0006 已应用。另建环境时需创建自己的数据库并替换绑定及 `APP_URL`，再执行迁移和部署。
+正式站为 https://coffee.nl-dams.com 。`wrangler.jsonc` 绑定 DAMS 账号内的 `data-coffee` Worker 和同名正式 D1。原 `workers.dev` 地址仅保留跳转。发布凭据需有正式 Worker 编辑与目标 D1 读取权限；使用 Wrangler 核对域名路由还需要 `nl-dams.com` 的 Workers Routes 写权限。
 
-发信配置：`EMAIL_FROM` 使用已在 Brevo 验证的发件人；当前测试环境使用配置中的 Gmail 发件地址，`EMAIL_FROM_NAME` 可为 Data Coffee。`BREVO_API_KEY` 和 `DEEPSEEK_API_KEY` 使用 Worker secrets；通过本地 secret CLI 在使用点读取后直接管道注入，不写入仓库、.dev.vars 或文档。`DEEPSEEK_MODEL` 可覆盖默认模型。
+发信配置：`EMAIL_FROM` 使用已在 Brevo 验证的发件人；正式站使用配置中的 Gmail 发件地址，`EMAIL_FROM_NAME` 可为 Data Coffee。`BREVO_API_KEY` 和 `DEEPSEEK_API_KEY` 使用 Worker secrets；通过本地 secret CLI 在使用点读取后直接管道注入，不写入仓库、.dev.vars 或文档。`DEEPSEEK_MODEL` 可覆盖默认模型。
 
-未配置 Brevo 的云端登录返回明确错误，不提供测试验证码；未配置 DeepSeek 时普通按钮仍可用。当前已部署云端测试环境，用户已确认收到验证码并成功登录；这不代表邮件容量、全部通知路径或模型功能已完成验收。
+未配置 Brevo 的云端登录返回明确错误，不提供测试验证码；未配置 DeepSeek 时普通按钮仍可用。实际收信和登录须在目标环境单独验收。
 
 ## 维护与故障定位
 
@@ -87,4 +87,4 @@ node cli/dc-flow.mjs events action EVENT_ID publish --version 0 --key publish-un
 
 演练时配置 Builds 变量 `DAMS_D1_ID`（目标库 UUID）和 `DAMS_PUBLIC_URL`（新 Worker 的 workers.dev 地址）。不配置发信密钥。此阶段只放测试数据，关闭定时任务；验证码登录与报名先用本地测试覆盖。确认首次发布、版本和活动列表读回后，继续安排正式迁移。
 
-正式迁移前，暂停源站写入和定时任务，并关闭演练入口或限制访问。将源站最终快照按已应用的 schema 导入另建的正式目标库，这一步单独取证和验收；不复制临时登录凭据，也不把状态不明的邮件直接重新排队。在目标库比对活动、报名与账户关系，核对邮件队列后，再设置正式发信凭据，通过单独的正式配置部署新 Worker 并绑定 `https://coffee.nl-dams.com`。只在目标站恢复定时任务。验证登录、报名和通知后，再启用旧地址跳转。
+演练 Worker 供自动发布验证，连接自己的空库；不要把正式数据导入演练库。
