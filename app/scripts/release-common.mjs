@@ -4,7 +4,7 @@ import {fileURLToPath} from 'node:url';
 
 export const APP_DIR=fileURLToPath(new URL('..',import.meta.url));
 export const REPO_DIR=fileURLToPath(new URL('../..',import.meta.url));
-export const DEFAULT_BASE_URL='https://data-coffee-dev.dewei-zhai.workers.dev';
+export const DEFAULT_BASE_URL='https://coffee.nl-dams.com';
 export const EXPECTED_REPO='zhaidewei/data_coffee';
 export const RELEASE_WORKFLOW_PATH='.github/workflows/ci.yml';
 

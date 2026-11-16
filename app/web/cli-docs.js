@@ -5,7 +5,7 @@ root.innerHTML=`<article class="cli-reference"><p class="eyebrow">DOCS / CLI REF
 <section id="setup"><h2>安装与开始使用</h2><p>需要 Git 和 Node.js 22+（包含 npm）。当前从 <a href="https://github.com/zhaidewei/data_coffee" target="_blank" rel="noopener noreferrer">GitHub 源码</a>安装，尚未发布 npm 安装包。</p><pre><code>git clone https://github.com/zhaidewei/data_coffee.git
 cd data_coffee/app
 npm link
-dc-flow --help</code></pre><h3>连接测试站点</h3><p>在终端执行以下命令。公开活动无需登录即可查询：</p><pre><code>export DATA_COFFEE_BASE_URL=https://data-coffee-dev.dewei-zhai.workers.dev
+dc-flow --help</code></pre><h3>连接正式站点</h3><p>在终端执行以下命令。公开活动无需登录即可查询：</p><pre><code>export DATA_COFFEE_BASE_URL=https://coffee.nl-dams.com
 dc-flow events list
 dc-flow events get EVENT_ID</code></pre><p>将 EVENT_ID 替换为列表返回的活动 id。export 对当前终端会话生效，新开终端时需要重新设置。也可以逐次传入 <code>--base-url</code>。不指定地址时默认连接 <code>http://localhost:8787</code>；远端地址必须使用 HTTPS，且不能带路径、查询参数或凭证。</p><p>不安装全局命令也可以在 app 目录执行 <code>node cli/dc-flow.mjs --help</code>。</p></section>
 <section id="commands"><h2>命令参考</h2><div class="cli-table"><table><thead><tr><th>命令</th><th>用途 / 请求体</th></tr></thead><tbody>
