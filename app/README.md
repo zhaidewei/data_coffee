@@ -80,3 +80,11 @@ node cli/dc-flow.mjs events action EVENT_ID publish --version 0 --key publish-un
 一期场地申请表示承诺覆盖整场活动时段，审核人核对容量、地址及可用性。当前不做场地日历或按小时分段匹配。
 
 验收主清单和实现设计位于上一层 `docs/`。付款、真实发信和远端运行验证均需独立记录结果。
+
+### DAMS 账号迁移
+
+在 DAMS Cloudflare 账号创建独立的 `data-coffee-preview` Worker 和同名 D1。先初始化目标空库的全部迁移。将 Worker 的 Builds 连接到 `zhaidewei/data_coffee`，生产分支用 `main`，根目录用 `app`，关闭分支预览。构建命令用 `npm run check && npm test`，发布命令用 `node scripts/dams-deploy.mjs`。Builds 凭据需要 DAMS Worker 编辑、目标 D1 读取权限；绑定域名时还需要 `nl-dams.com` 的 Workers Routes 写权限。发布脚本会核对数据库迁移和线上 Git SHA。
+
+演练时配置 Builds 变量 `DAMS_D1_ID`（目标库 UUID）和 `DAMS_PUBLIC_URL`（新 Worker 的 workers.dev 地址）。不配置发信密钥。此阶段只放测试数据，关闭定时任务；验证码登录与报名先用本地测试覆盖。确认首次发布、版本和活动列表读回后，继续安排正式迁移。
+
+正式迁移前，暂停源站写入和定时任务，并关闭演练入口或限制访问。将源站最终快照按已应用的 schema 导入另建的正式目标库，这一步单独取证和验收；不复制临时登录凭据，也不把状态不明的邮件直接重新排队。在目标库比对活动、报名与账户关系，核对邮件队列后，再设置正式发信凭据，通过单独的正式配置部署新 Worker 并绑定 `https://coffee.nl-dams.com`。只在目标站恢复定时任务。验证登录、报名和通知后，再启用旧地址跳转。

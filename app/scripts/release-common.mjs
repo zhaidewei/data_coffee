@@ -115,8 +115,8 @@ export function parseD1Rows(output){
   return parsed.flatMap(result=>result.results);
 }
 
-export function remoteRows(sql){
-  const output=capture('npx',['--no-install','wrangler','d1','execute','DB','--remote','--json','--command',sql],{label:'读取远端 D1'});
+export function remoteRows(sql,wranglerOptions=[]){
+  const output=capture('npx',['--no-install','wrangler','d1','execute','DB','--remote','--json','--command',sql,...wranglerOptions],{label:'读取远端 D1'});
   return parseD1Rows(output);
 }
 
@@ -128,9 +128,9 @@ export function migrationDelta(local,applied){
   };
 }
 
-export function assertRemoteMigrationsCurrent(){
+export function assertRemoteMigrationsCurrent(wranglerOptions=[]){
   const local=readdirSync(new URL('../migrations/',import.meta.url)).filter(name=>name.endsWith('.sql')).sort();
-  const applied=remoteRows('SELECT name FROM d1_migrations ORDER BY id').map(row=>row.name);
+  const applied=remoteRows('SELECT name FROM d1_migrations ORDER BY id',wranglerOptions).map(row=>row.name);
   if(applied.some(name=>typeof name!=='string'))throw new ReleaseError('远端 migration 记录格式无效');
   const delta=migrationDelta(local,applied);
   if(delta.pending.length)throw new ReleaseError(`远端 D1 尚未应用 migration：${delta.pending.join(', ')}`);
