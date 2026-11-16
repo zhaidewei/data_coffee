@@ -20,7 +20,14 @@ export default {
     const isApi=url.pathname.startsWith('/api/');
     let res:Response;
     try{
-      if(!isApi)res=await env.ASSETS.fetch(request);
+      if(!isApi){
+        res=await env.ASSETS.fetch(request);
+        if(env.APP_ENV==='production'&&res.headers.get('Content-Type')?.startsWith('text/html')){
+          res=new HTMLRewriter()
+            .on('[data-testing-banner]',{element(element){element.remove();}})
+            .transform(res);
+        }
+      }
       else {
       if(!['GET','HEAD'].includes(request.method)){
         const origin=request.headers.get('origin');
